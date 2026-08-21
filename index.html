@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>GeoTrilateración - Localizador & Mapas Offline</title>
+  <meta name="description" content="Localizador geográfico de puntos mediante trilateración y multilateración geodésica con soporte completo para mapas offline.">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  
+  <!-- App CSS -->
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- Top Navigation Bar -->
+    <header class="top-nav">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" stroke-dasharray="2 2"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>GeoTrilateración</h1>
+          <span class="badge badge-pulse">Localizador Geodésico</span>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <!-- New Measurement Session Button -->
+        <button id="btn-new-measurement" class="btn btn-outline" title="Iniciar Nueva Medición (Limpia orígenes activos sin borrar guardados)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"></path></svg>
+          <span class="btn-text">Nueva Medición</span>
+        </button>
+
+        <!-- Quick Coordinates / GPS -->
+        <button id="btn-gps" class="btn btn-secondary btn-icon" title="Mi Ubicación GPS">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+          <span class="btn-text">GPS</span>
+        </button>
+
+        <!-- Quick Jump to Preset (Managua & Regional) -->
+        <div class="dropdown">
+          <button id="btn-presets" class="btn btn-secondary" title="Zonas Rápidas">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            <span class="btn-text">Zonas</span>
+          </button>
+          <div class="dropdown-menu" id="presets-menu">
+            <button class="dropdown-item" data-lat="12.1364" data-lng="-86.2514" data-zoom="13">🇳🇮 Managua (Centro)</button>
+            <button class="dropdown-item" data-lat="12.1150" data-lng="-86.2360" data-zoom="14">📍 Managua (Metrocentro / Galerías)</button>
+            <button class="dropdown-item" data-lat="11.9344" data-lng="-85.9560" data-zoom="14">🏛️ Granada (Nicaragua)</button>
+            <button class="dropdown-item" data-lat="12.4379" data-lng="-86.8780" data-zoom="14">⛪ León (Nicaragua)</button>
+            <button class="dropdown-item" data-lat="11.9845" data-lng="-86.0945" data-zoom="14">🌋 Masaya</button>
+            <hr>
+            <button class="dropdown-item" data-lat="9.9281" data-lng="-84.0907" data-zoom="13">🇨🇷 San José (Costa Rica)</button>
+            <button class="dropdown-item" data-lat="13.6929" data-lng="-89.2182" data-zoom="13">🇸🇻 San Salvador (El Salvador)</button>
+            <button class="dropdown-item" data-lat="14.0723" data-lng="-87.1921" data-zoom="13">🇭🇳 Tegucigalpa (Honduras)</button>
+            <button class="dropdown-item" data-lat="14.6349" data-lng="-90.5069" data-zoom="13">🇬🇹 Cd. de Guatemala</button>
+            <hr>
+            <button class="dropdown-item" id="btn-custom-coords">🌐 Ir a Coordenadas...</button>
+          </div>
+        </div>
+
+        <!-- Offline Manager Button -->
+        <button id="btn-open-offline" class="btn btn-outline" title="Gestor de Mapas Offline">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span class="btn-text">Mapas Offline</span>
+          <span id="offline-badge" class="badge badge-success">Activo</span>
+        </button>
+
+        <!-- Theme Toggle -->
+        <button id="btn-toggle-theme" class="btn btn-icon btn-ghost" title="Cambiar Tema">
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        </button>
+
+        <!-- Toggle Sidebar -->
+        <button id="btn-toggle-sidebar" class="btn btn-secondary toggle-sidebar-btn" title="Ocultar / Mostrar Barra Lateral">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          <span class="btn-text">Panel Lateral</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="main-workspace">
+      <!-- Map Container -->
+      <div id="map" class="map-view"></div>
+
+      <!-- Floating Map Controls HUD -->
+      <div class="map-hud-overlay">
+        <!-- Telemetry & Target Solver Status Banner -->
+        <div id="telemetry-banner" class="telemetry-card glassmorphism">
+          <div class="telemetry-header">
+            <div class="status-indicator">
+              <span class="pulse-dot" id="status-dot"></span>
+              <span id="solver-status-title" class="status-title">Sin orígenes</span>
+            </div>
+            <button id="btn-minimize-hud" class="btn-minimize" title="Minimizar">▼</button>
+          </div>
+          <div id="telemetry-body" class="telemetry-content">
+            <p id="solver-message" class="solver-hint">
+              Haz clic en el mapa o pulsa <strong>"+ Agregar Origen"</strong> para iniciar la búsqueda de tu punto final.
+            </p>
+            <!-- 2-Origins Candidate Intersections Box -->
+            <div id="target-candidates-box" class="candidates-display hidden">
+              <div class="candidates-title-row">
+                <span class="candidates-title-text">📍 Puntos Candidatos Encontrados:</span>
+                <span class="badge badge-info" id="candidates-count-badge">2</span>
+              </div>
+              <div id="candidates-list" class="candidates-list"></div>
+            </div>
+            <div id="target-coordinates-box" class="coordinates-display hidden">
+              <div class="coord-row">
+                <span class="coord-label">🎯 Objetivo Estimado:</span>
+                <span id="target-coords-text" class="coord-val font-mono">--</span>
+              </div>
+              <div class="coord-subrow">
+                <span id="target-accuracy-badge" class="badge badge-info">Precisión: ±0m</span>
+                <span id="target-method-badge" class="badge badge-secondary">Método: --</span>
+              </div>
+              <div class="action-buttons-compact">
+                <button id="btn-save-as-target" class="btn btn-sm btn-primary">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                  Guardar
+                </button>
+                <button id="btn-dismiss-target" class="btn btn-sm btn-danger" title="Descartar este objetivo calculado actual">
+                  ❌ Descartar
+                </button>
+                <button id="btn-copy-coords" class="btn btn-sm btn-outline" title="Copiar Coordenadas">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
+                <button id="btn-center-target" class="btn btn-sm btn-ghost" title="Centrar en el mapa">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Mode Floating Bar with Map Clean-up Layer Toggles -->
+        <div class="quick-action-bar glassmorphism">
+          <button id="btn-add-origin-mode" class="btn btn-primary" title="Hacer clic en el mapa para situar tu punto de origen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+            <span>+ Agregar Origen</span>
+          </button>
+          <button id="btn-quick-new" class="btn btn-secondary" title="Nueva Medición">
+            <span>✨ Nueva</span>
+          </button>
+          <button id="btn-clear-origins" class="btn btn-danger btn-icon" title="Limpiar todos los orígenes actuales">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
+          <div class="divider-v"></div>
+          <!-- Clean-up Map Visibility Toggles -->
+          <button id="btn-toggle-vis-circles" class="btn btn-secondary btn-icon active-toggle" title="Ocultar/Mostrar Círculos de Distancia">
+            ⭕
+          </button>
+          <button id="btn-toggle-vis-origins" class="btn btn-secondary btn-icon active-toggle" title="Ocultar/Mostrar Puntos de Origen">
+            📍
+          </button>
+          <button id="btn-toggle-vis-targets" class="btn btn-secondary btn-icon active-toggle" title="Ocultar/Mostrar Puntos Guardados">
+            📌
+          </button>
+          <div class="divider-v"></div>
+          <button id="btn-fit-bounds" class="btn btn-secondary btn-icon" title="Ajustar vista a todos los puntos">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+          </button>
+          <button id="btn-toggle-layers" class="btn btn-secondary btn-icon" title="Capas de mapa (Satélite, Calles, Topo)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Collapsible Control Panel (Sidebar) -->
+      <aside id="sidebar" class="sidebar glassmorphism">
+        <!-- Pestaña lateral para plegar / desplegar panel -->
+        <button id="btn-sidebar-collapse" class="sidebar-drawer-tab" title="Ocultar / Desplegar Panel Lateral">
+          <span id="sidebar-collapse-icon" class="drawer-icon">▶</span>
+          <span class="drawer-text">PANEL</span>
+        </button>
+
+        <!-- Sidebar Tabs -->
+        <div class="sidebar-tabs">
+          <button class="tab-btn active" data-tab="tab-origins">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+            <span>Orígenes (<span id="origin-count">0</span>)</span>
+          </button>
+          <button class="tab-btn" data-tab="tab-saved-markers">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            <span>Puntos Guardados (<span id="saved-count">0</span>)</span>
+          </button>
+          <button class="tab-btn" data-tab="tab-settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Opciones</span>
+          </button>
+          <button id="btn-close-sidebar" class="sidebar-close-btn" title="Ocultar Panel Lateral">✕</button>
+        </div>
+
+        <!-- TAB 1: ORIGINS (Mediciones) -->
+        <div id="tab-origins" class="tab-content active">
+          <div class="tab-header">
+            <h3>Puntos de Origen y Distancias</h3>
+            <p class="tab-subtitle">Indica tu ubicación y la distancia al punto final.</p>
+          </div>
+
+          <!-- Add / Edit Origin Form Card -->
+          <div class="card origin-form-card" id="origin-form-card">
+            <div class="origin-form-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <h4 class="card-title" id="origin-form-title" style="margin-bottom: 0;">
+                <span class="step-num" id="origin-form-badge">1</span> <span id="origin-form-heading">Nuevo Punto de Origen</span>
+              </h4>
+              <button id="btn-cancel-edit-origin" class="btn btn-xs btn-outline hidden" title="Cancelar edición y crear nuevo punto">✕ Cancelar</button>
+            </div>
+            <input type="hidden" id="input-editing-origin-id" value="">
+
+            <div class="form-group">
+              <label>Etiqueta / Nombre:</label>
+              <input type="text" id="input-origin-label" class="form-control" placeholder="Ej: Origen 1 (Casa), Punto A...">
+            </div>
+
+            <div class="form-row">
+              <div class="form-group col-7">
+                <label>Distancia al Objetivo:</label>
+                <input type="number" id="input-origin-distance" class="form-control font-mono" placeholder="Ej: 1500" step="any" min="0.1">
+              </div>
+              <div class="form-group col-5">
+                <label>Unidad:</label>
+                <select id="select-origin-unit" class="form-control">
+                  <option value="m">Metros (m)</option>
+                  <option value="km" selected>Kilómetros (km)</option>
+                  <option value="mi">Millas (mi)</option>
+                  <option value="ft">Pies (ft)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group col-6">
+                <label>Latitud:</label>
+                <input type="number" id="input-origin-lat" class="form-control font-mono" placeholder="12.1364..." step="any">
+              </div>
+              <div class="form-group col-6">
+                <label>Longitud:</label>
+                <input type="number" id="input-origin-lng" class="form-control font-mono" placeholder="-86.2514..." step="any">
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button id="btn-submit-origin" class="btn btn-primary btn-block">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span id="btn-submit-origin-text">Guardar y Calcular</span>
+              </button>
+              <button id="btn-use-map-center" class="btn btn-secondary btn-sm" title="Usar centro actual del mapa">
+                📍 Usar Centro de Mapa
+              </button>
+            </div>
+          </div>
+
+          <!-- Origins List -->
+          <div class="origins-list-container">
+            <div class="section-title-row">
+              <h4>Mediciones Activas</h4>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="badge badge-info" style="font-size: 10px; cursor: help;" title="Selecciona un origen y usa Ctrl + Flecha Arriba / Abajo para intercambiar su orden">⌨️ Ctrl + ▲ / ▼</span>
+                <span class="helper-text" id="origins-helper-text">0 registradas</span>
+              </div>
+            </div>
+            <div id="origins-list" class="origins-list">
+              <!-- Rendered dynamically -->
+              <div class="empty-state">
+                <div class="empty-icon">📍</div>
+                <p>No has agregado puntos de origen todavía.</p>
+                <small>Haz clic en el mapa o usa el formulario superior.</small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: SAVED TARGETS (Puntos Finales Guardados) -->
+        <div id="tab-saved-markers" class="tab-content">
+          <div class="tab-header">
+            <h3>Puntos Finales Guardados</h3>
+            <p class="tab-subtitle">Historial de objetivos localizados con descripciones y notas.</p>
+          </div>
+
+          <div class="search-bar">
+            <input type="text" id="input-search-saved" class="form-control" placeholder="🔍 Buscar por nombre o descripción...">
+          </div>
+
+          <!-- Color Swatch Filter Bar -->
+          <div class="color-filter-bar" id="saved-color-filters">
+            <button class="filter-pill active" data-color="all">Todos</button>
+            <button class="filter-pill-color" data-color="#0284c7" style="--c: #0284c7;" title="Azul Océano"></button>
+            <button class="filter-pill-color" data-color="#38bdf8" style="--c: #38bdf8;" title="Azul Cyan"></button>
+            <button class="filter-pill-color" data-color="#ec4899" style="--c: #ec4899;" title="Rosa Fucsia"></button>
+            <button class="filter-pill-color" data-color="#f43f5e" style="--c: #f43f5e;" title="Rosa Frambuesa"></button>
+            <button class="filter-pill-color" data-color="#eab308" style="--c: #eab308;" title="Amarillo Sol"></button>
+            <button class="filter-pill-color" data-color="#64748b" style="--c: #64748b;" title="Gris Pizarra"></button>
+          </div>
+
+          <div id="saved-markers-list" class="saved-list">
+            <!-- Dynamic items -->
+            <div class="empty-state">
+              <div class="empty-icon">🎯</div>
+              <p>No hay puntos finales guardados.</p>
+              <small>Cuando la trilateración estime tu objetivo, podrás guardarlo aquí.</small>
+            </div>
+          </div>
+
+          <div class="tab-footer-actions">
+            <button id="btn-export-geojson" class="btn btn-outline btn-block">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Exportar GeoJSON / KML
+            </button>
+          </div>
+        </div>
+
+        <!-- TAB 3: SETTINGS & EXPORT / IMPORT -->
+        <div id="tab-settings" class="tab-content">
+          <div class="tab-header">
+            <h3>Configuración y Datos</h3>
+            <p class="tab-subtitle">Ajustes matemáticos, respaldo y almacenamiento.</p>
+          </div>
+
+          <!-- Solver Settings -->
+          <div class="card settings-card">
+            <h4 class="card-title">📐 Configuración de Trilateración</h4>
+            <div class="form-group">
+              <label>Modelo de Tierra:</label>
+              <select id="select-earth-model" class="form-control">
+                <option value="wgs84">WGS-84 Geodésico Esférico (R = 6,371,000 m)</option>
+                <option value="haversine">Haversine Gran Círculo</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Tolerancia de Convergencia (m):</label>
+              <input type="number" id="input-solver-tolerance" class="form-control" value="0.05" step="0.01" min="0.001">
+            </div>
+            <div class="form-check">
+              <input type="checkbox" id="check-show-intersections" checked>
+              <label for="check-show-intersections">Mostrar puntos de intersección entre pares de círculos</label>
+            </div>
+            <div class="form-check">
+              <input type="checkbox" id="check-show-circle-fill" checked>
+              <label for="check-show-circle-fill">Relleno translúcido en círculos de distancia</label>
+            </div>
+          </div>
+
+          <!-- Backup and Data Management -->
+          <div class="card settings-card">
+            <h4 class="card-title">💾 Respaldo y Copia de Seguridad</h4>
+            <div class="btn-group-vertical">
+              <button id="btn-export-json" class="btn btn-secondary">
+                📤 Exportar Copia de Seguridad Completa (JSON)
+              </button>
+              <button id="btn-import-json-trigger" class="btn btn-secondary">
+                📥 Importar Datos (JSON)
+              </button>
+              <input type="file" id="input-import-file" accept=".json,.geojson" style="display: none;">
+              <button id="btn-reset-all-data" class="btn btn-outline-danger">
+                🗑️ Borrar Todos los Datos Locales
+              </button>
+            </div>
+          </div>
+
+          <!-- App Info -->
+          <div class="card settings-card info-card">
+            <h4>ℹ️ Acerca de GeoTrilateración</h4>
+            <p>Herramienta diseñada para localización de fuentes de señal, búsquedas geográficas y triangulación de puntos ciegos mediante circunferencias geodésicas y mínimos cuadrados no lineales.</p>
+            <div class="version-tag">Versión 1.1.0 • Multimedia & Offline Ready</div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Modal: Offline Map Downloader -->
+    <div id="modal-offline" class="modal-backdrop hidden">
+      <div class="modal-dialog glassmorphism">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <h3>Descargar Zona para Uso Offline</h3>
+          </div>
+          <button class="btn-close-modal" id="btn-close-offline-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-intro">
+            Guarda en la memoria de tu navegador (IndexedDB) las teselas del mapa para que puedas navegar, calcular y visualizar sin conexión a internet.
+          </p>
+
+          <div class="offline-preset-grid">
+            <button class="preset-card active" data-zone="managua-core">
+              <div class="preset-name">🇳🇮 Managua Completa</div>
+              <div class="preset-details">Área Urbana (~150 km²)</div>
+            </button>
+            <button class="preset-card" data-zone="current-view">
+              <div class="preset-name">👁️ Vista Actual del Mapa</div>
+              <div class="preset-details">Área visible en pantalla</div>
+            </button>
+            <button class="preset-card" data-zone="custom-box">
+              <div class="preset-name">📐 Dibujar Rectángulo</div>
+              <div class="preset-details">Seleccionar en el mapa</div>
+            </button>
+          </div>
+
+          <div class="form-group mt-3">
+            <label>Nivel de Detalle / Rango de Zoom:</label>
+            <div class="zoom-range-selector">
+              <div class="form-row">
+                <div class="col-6">
+                  <small>Zoom Mínimo (General):</small>
+                  <select id="select-zoom-min" class="form-control">
+                    <option value="10">Zoom 10 (Región)</option>
+                    <option value="11">Zoom 11 (Ciudad y alrededores)</option>
+                    <option value="12" selected>Zoom 12 (Área Urbana)</option>
+                    <option value="13">Zoom 13 (Distritos)</option>
+                  </select>
+                </div>
+                <div class="col-6">
+                  <small>Zoom Máximo (Detalle Calles):</small>
+                  <select id="select-zoom-max" class="form-control">
+                    <option value="14">Zoom 14 (Avenidas)</option>
+                    <option value="15" selected>Zoom 15 (Calles principales)</option>
+                    <option value="16">Zoom 16 (Detalle de barrios)</option>
+                    <option value="17">Zoom 17 (Nivel de calle fino)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Estimation & Storage Info -->
+          <div class="storage-estimate-box">
+            <div class="stat-col">
+              <span class="stat-num" id="estimate-tile-count">~1,420</span>
+              <span class="stat-label">Teselas estimadas</span>
+            </div>
+            <div class="stat-col">
+              <span class="stat-num" id="estimate-storage-size">~22 MB</span>
+              <span class="stat-label">Espacio estimado</span>
+            </div>
+            <div class="stat-col">
+              <span class="stat-num" id="current-cached-count">0</span>
+              <span class="stat-label">En caché local</span>
+            </div>
+          </div>
+
+          <!-- Download Progress Bar -->
+          <div id="download-progress-wrap" class="progress-wrap hidden">
+            <div class="progress-labels">
+              <span id="download-progress-status">Descargando teselas...</span>
+              <span id="download-progress-percent">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div id="download-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+          </div>
+
+          <!-- Stored offline packs management -->
+          <div class="stored-packs-section">
+            <div class="section-title-row">
+              <h4>Zonas Guardadas en este Dispositivo</h4>
+              <button id="btn-clear-tile-cache" class="btn btn-sm btn-outline-danger">Limpiar Caché de Mapa</button>
+            </div>
+            <div id="stored-packs-list" class="packs-list">
+              <div class="pack-item empty-pack">No hay zonas descargadas aún.</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-cancel-download" class="btn btn-secondary hidden">Cancelar Descarga</button>
+          <button id="btn-start-download" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Iniciar Descarga Offline
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Quick Add Origin Dialog (Floating Pop-up on Map Click) -->
+    <div id="modal-quick-origin" class="modal-backdrop hidden">
+      <div class="modal-dialog modal-sm glassmorphism">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-badge-target" style="background: var(--accent-primary);">📍</span>
+            <h3 id="modal-origin-title">Nuevo Punto de Origen</h3>
+          </div>
+          <button class="btn-close-modal" id="btn-close-origin-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <form id="form-quick-origin">
+            <div class="form-group">
+              <label>Etiqueta / Nombre:</label>
+              <input type="text" id="modal-origin-label" class="form-control" placeholder="Ej: Origen 1">
+            </div>
+
+            <div class="form-row">
+              <div class="form-group col-7">
+                <label>Distancia al Objetivo:*</label>
+                <input type="number" id="modal-origin-distance" class="form-control font-mono" placeholder="Ej: 1500" step="any" min="0.1" required>
+              </div>
+              <div class="form-group col-5">
+                <label>Unidad:</label>
+                <select id="modal-origin-unit" class="form-control">
+                  <option value="m">Metros (m)</option>
+                  <option value="km" selected>Kilómetros (km)</option>
+                  <option value="mi">Millas (mi)</option>
+                  <option value="ft">Pies (ft)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Coordenadas del Punto:</label>
+              <div class="form-row">
+                <div class="col-6">
+                  <input type="text" id="modal-origin-lat" class="form-control font-mono" readonly placeholder="Latitud">
+                </div>
+                <div class="col-6">
+                  <input type="text" id="modal-origin-lng" class="form-control font-mono" readonly placeholder="Longitud">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Notas opcionales:</label>
+              <input type="text" id="modal-origin-notes" class="form-control" placeholder="Ej: Esquina norte, torre de señal...">
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-modal-origin">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="btn-confirm-modal-origin">
+            💾 Guardar y Calcular
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Save / Edit Target Dialog -->
+    <div id="modal-save-target" class="modal-backdrop hidden">
+      <div class="modal-dialog modal-md glassmorphism">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-badge-target" id="modal-target-icon">🎯</span>
+            <h3 id="modal-target-title">Guardar Punto Final Encontrado</h3>
+          </div>
+          <button class="btn-close-modal" id="btn-close-save-target-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <form id="form-save-target">
+            <input type="hidden" id="target-edit-id" value="">
+            
+            <div class="form-group">
+              <label>Nombre del Punto Final / Etiqueta:*</label>
+              <input type="text" id="target-name-input" class="form-control" placeholder="Ej: Antena Repetidora 01, Objetivo Managua Sur..." required>
+            </div>
+
+            <!-- 6 Preset Colors + Optional Spectrum Picker -->
+            <div class="form-group">
+              <label>Color de la Etiqueta (6 Colores Predeterminados):</label>
+              <div class="preset-color-swatches" id="target-color-swatches">
+                <button type="button" class="swatch-btn active" data-color="#0284c7" style="--swatch: #0284c7;" title="Azul Océano"></button>
+                <button type="button" class="swatch-btn" data-color="#38bdf8" style="--swatch: #38bdf8;" title="Azul Cyan Neón"></button>
+                <button type="button" class="swatch-btn" data-color="#ec4899" style="--swatch: #ec4899;" title="Rosa Fucsia"></button>
+                <button type="button" class="swatch-btn" data-color="#f43f5e" style="--swatch: #f43f5e;" title="Rosa Frambuesa"></button>
+                <button type="button" class="swatch-btn" data-color="#eab308" style="--swatch: #eab308;" title="Amarillo Sol"></button>
+                <button type="button" class="swatch-btn" data-color="#64748b" style="--swatch: #64748b;" title="Gris Pizarra"></button>
+                <button type="button" id="btn-toggle-custom-color" class="btn btn-xs btn-outline" title="Elegir otro color libre del espectro">
+                  🎨 Espectro
+                </button>
+              </div>
+              <div id="custom-color-wrap" class="custom-color-container hidden">
+                <input type="color" id="target-color-input" class="form-color-picker" value="#0284c7">
+                <span class="color-preview-text">Color personalizado libre</span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group col-6">
+                <label>Categoría / Tipo:</label>
+                <select id="target-category-input" class="form-control">
+                  <option value="target">🎯 Objetivo Principal</option>
+                  <option value="transmitter">📡 Transmisor / Emisor</option>
+                  <option value="waypoint">📍 Punto de Interés</option>
+                  <option value="incident">⚠️ Evento / Incidencia</option>
+                  <option value="station">🏢 Estación Base</option>
+                </select>
+              </div>
+              <div class="form-group col-6">
+                <label>Precisión Estimada:</label>
+                <input type="text" id="target-modal-accuracy" class="form-control font-mono" readonly value="±0.0 m">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Coordenadas:</label>
+              <div class="form-row">
+                <div class="col-6">
+                  <input type="text" id="target-modal-lat" class="form-control font-mono" placeholder="Latitud" required>
+                </div>
+                <div class="col-6">
+                  <input type="text" id="target-modal-lng" class="form-control font-mono" placeholder="Longitud" required>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Descripción y Notas de Campo:</label>
+              <textarea id="target-desc-input" class="form-control" rows="2" placeholder="Añade detalles, referencias del lugar, observaciones visuales, etc."></textarea>
+            </div>
+
+            <!-- Multimedia Section (Photos and Videos) -->
+            <div class="form-group">
+              <div class="section-title-row">
+                <label>📷 Fotos y Videos Adjuntos:</label>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <button type="button" id="btn-paste-media" class="btn btn-xs btn-outline" title="Pegar imagen o video copiado en el portapapeles (Ctrl+V)">
+                    📋 Pegar Portapapeles
+                  </button>
+                  <label for="target-media-input" class="btn btn-xs btn-outline" style="margin-bottom: 0; cursor: pointer;">
+                    ➕ Adjuntar Archivo
+                  </label>
+                </div>
+                <input type="file" id="target-media-input" accept="image/*,video/*" multiple style="display: none;">
+              </div>
+              <div id="target-media-preview-container" class="media-preview-grid">
+                <!-- Dynamically filled with thumbnails / video preview items -->
+                <div class="empty-media-hint" id="empty-media-hint">
+                  Sin archivos adjuntos. Usa <strong>"Adjuntar"</strong>, presiona <strong>Ctrl + V</strong> o arrastra archivos aquí.
+                </div>
+              </div>
+            </div>
+
+            <div class="target-metadata-summary">
+              <small>ℹ️ Se guardará en la base de datos offline (IndexedDB) con soporte total sin conexión.</small>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-danger hidden" id="btn-delete-from-modal">
+            🗑️ Eliminar Etiqueta
+          </button>
+          <button type="button" class="btn btn-secondary" id="btn-cancel-save-target">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="btn-confirm-save-target">
+            💾 Guardar Etiqueta
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Custom Coordinates Jump -->
+    <div id="modal-custom-coords" class="modal-backdrop hidden">
+      <div class="modal-dialog modal-sm glassmorphism">
+        <div class="modal-header">
+          <h3>Ir a Coordenadas</h3>
+          <button class="btn-close-modal" id="btn-close-coords-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Latitud:</label>
+            <input type="number" id="input-jump-lat" class="form-control font-mono" placeholder="Ej: 12.1364" step="any">
+          </div>
+          <div class="form-group">
+            <label>Longitud:</label>
+            <input type="number" id="input-jump-lng" class="form-control font-mono" placeholder="Ej: -86.2514" step="any">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btn-cancel-jump">Cancelar</button>
+          <button class="btn btn-primary" id="btn-confirm-jump">Ir a Ubicación</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="toast-container"></div>
+  </div>
+
+  <!-- Leaflet Library Bundle (CDN with fallback) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <!-- Core Application Scripts -->
+  <script src="js/trilateration.js"></script>
+  <script src="js/offline-manager.js"></script>
+  <script src="js/markers-manager.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
