@@ -1,6 +1,6 @@
 /**
  * GeoTrilateration - Markers & Data Management
- * Handles origin points, solved targets, persistence and GeoJSON/KML exports
+ * Handles origin points, database of solved targets, comparison engine & GeoJSON/KML exports
  */
 
 class MarkersManager {
@@ -12,6 +12,8 @@ class MarkersManager {
     this.origins = [];
     this.savedTargets = [];
     this.activeColorFilter = null; // null means 'All'
+    this.selectedForComparison = []; // array of target IDs
+
     this.settings = {
       earthModel: 'wgs84',
       solverTolerance: 0.05,
@@ -71,17 +73,11 @@ class MarkersManager {
     return `${meters.toFixed(1)} m`;
   }
 
-  /**
-   * Get Next Color for Origin
-   */
   getNextColor() {
     const index = this.origins.length % this.colorPalette.length;
     return this.colorPalette[index];
   }
 
-  /**
-   * Load data from localStorage
-   */
   loadFromStorage() {
     try {
       const savedOrigins = localStorage.getItem(this.STORAGE_KEY_ORIGINS);
@@ -97,9 +93,6 @@ class MarkersManager {
     }
   }
 
-  /**
-   * Persist state to localStorage
-   */
   saveToStorage() {
     try {
       localStorage.setItem(this.STORAGE_KEY_ORIGINS, JSON.stringify(this.origins));
@@ -140,8 +133,11 @@ class MarkersManager {
 
     if (updates.distance !== undefined && updates.unit !== undefined) {
       updates.distance = this.convertToMeters(updates.distance, updates.unit);
+      updates.rawDistance = parseFloat(updates.distance);
     } else if (updates.distance !== undefined) {
-      updates.distance = this.convertToMeters(updates.distance, this.origins[idx].unit);
+      const u = this.origins[idx].unit || 'km';
+      updates.rawDistance = parseFloat(updates.distance);
+      updates.distance = this.convertToMeters(updates.distance, u);
     }
 
     this.origins[idx] = { ...this.origins[idx], ...updates };
@@ -169,11 +165,6 @@ class MarkersManager {
     return false;
   }
 
-  /**
-   * Reorder Origin Point up or down in the list
-   * @param {string} id - Origin point id
-   * @param {number} direction - -1 for Up, +1 for Down
-   */
   moveOrigin(id, direction) {
     const index = this.origins.findIndex(o => String(o.id) === String(id));
     if (index === -1) return false;
@@ -181,11 +172,9 @@ class MarkersManager {
     const newIndex = index + direction;
     if (newIndex < 0 || newIndex >= this.origins.length) return false;
 
-    // Swap / Move element
     const item = this.origins.splice(index, 1)[0];
     this.origins.splice(newIndex, 0, item);
 
-    // Re-align default color order and labels if standard
     this.origins.forEach((o, idx) => {
       o.color = this.colorPalette[idx % this.colorPalette.length];
       if (/^Origen\s*\d+$/i.test(o.label) || /^Punto\s*\d+$/i.test(o.label)) {
@@ -198,7 +187,7 @@ class MarkersManager {
   }
 
   /* --------------------------------------------------------------------------
-     Saved Final Targets CRUD
+     Database of Solved Final Targets (Puntos Finales)
      -------------------------------------------------------------------------- */
   addTarget(data) {
     const target = {
@@ -210,22 +199,21 @@ class MarkersManager {
       lat: parseFloat(data.lat),
       lng: parseFloat(data.lng),
       accuracy: data.accuracy || 0,
-      mediaList: data.mediaList || [], // [{ id, name, type, size, thumbnail }]
+      originsCount: data.originsCount || (this.origins ? this.origins.length : 0),
+      mediaList: data.mediaList || [],
       originsSnapshot: data.originsSnapshot || JSON.parse(JSON.stringify(this.origins)),
+      visible: true,
       createdAt: data.createdAt || new Date().toISOString()
     };
 
-    this.savedTargets.unshift(target); // prepend to list
+    this.savedTargets.unshift(target);
     this.saveToStorage();
     return target;
   }
 
   updateTarget(id, updates) {
     const idx = this.savedTargets.findIndex(t => String(t.id) === String(id));
-    if (idx === -1) {
-      console.warn(`Target with id ${id} not found.`);
-      return null;
-    }
+    if (idx === -1) return null;
 
     this.savedTargets[idx] = {
       ...this.savedTargets[idx],
@@ -235,6 +223,12 @@ class MarkersManager {
 
     this.saveToStorage();
     return this.savedTargets[idx];
+  }
+
+  removeTarget(id) {
+    this.savedTargets = this.savedTargets.filter(t => String(t.id) !== String(id));
+    this.selectedForComparison = this.selectedForComparison.filter(tid => tid !== id);
+    this.saveToStorage();
   }
 
   getTargetById(id) {
@@ -248,50 +242,113 @@ class MarkersManager {
     return this.savedTargets.filter(t => (t.color || '').toLowerCase() === this.activeColorFilter.toLowerCase());
   }
 
-  setColorFilter(colorHex) {
-    this.activeColorFilter = colorHex; // null or '#0284c7' etc.
-    return this.getFilteredTargets();
-  }
+  /**
+   * Restore measurement session from a target's saved origins snapshot
+   */
+  loadOriginsFromTarget(targetId) {
+    const target = this.getTargetById(targetId);
+    if (!target || !target.originsSnapshot || target.originsSnapshot.length === 0) {
+      return false;
+    }
 
-  removeTarget(id) {
-    this.savedTargets = this.savedTargets.filter(t => String(t.id) !== String(id));
+    this.origins = JSON.parse(JSON.stringify(target.originsSnapshot));
     this.saveToStorage();
-  }
-
-  clearAllData() {
-    this.origins = [];
-    this.savedTargets = [];
-    this.settings = {
-      earthModel: 'wgs84',
-      solverTolerance: 0.05,
-      showIntersections: true,
-      showCircleFill: true,
-      theme: 'dark'
-    };
-    localStorage.removeItem(this.STORAGE_KEY_ORIGINS);
-    localStorage.removeItem(this.STORAGE_KEY_TARGETS);
-    localStorage.removeItem(this.STORAGE_KEY_SETTINGS);
+    return true;
   }
 
   /* --------------------------------------------------------------------------
-     Export and Import Functions
+     Comparison Engine (Comparación Geodésica entre Puntos Finales)
      -------------------------------------------------------------------------- */
-  exportJSON() {
-    const payload = {
-      app: 'GeoTrilateration',
-      version: '1.0.0',
-      exportedAt: new Date().toISOString(),
-      origins: this.origins,
-      savedTargets: this.savedTargets,
-      settings: this.settings
-    };
-    return JSON.stringify(payload, null, 2);
+  toggleTargetComparisonSelection(targetId) {
+    const idx = this.selectedForComparison.indexOf(targetId);
+    if (idx >= 0) {
+      this.selectedForComparison.splice(idx, 1);
+    } else {
+      if (this.selectedForComparison.length >= 2) {
+        this.selectedForComparison.shift(); // keep at most 2 for pairwise comparison
+      }
+      this.selectedForComparison.push(targetId);
+    }
+    return this.selectedForComparison;
   }
 
-  exportGeoJSON() {
+  clearComparisonSelection() {
+    this.selectedForComparison = [];
+  }
+
+  /**
+   * Compare two saved targets
+   */
+  compareTargets(idA, idB) {
+    const tA = this.getTargetById(idA);
+    const tB = this.getTargetById(idB);
+    if (!tA || !tB) return null;
+
+    const toRad = d => (d * Math.PI) / 180;
+    const toDeg = r => (r * 180) / Math.PI;
+    const R = 6371000;
+
+    const lat1 = toRad(tA.lat);
+    const lat2 = toRad(tB.lat);
+    const dLat = toRad(tB.lat - tA.lat);
+    const dLng = toRad(tB.lng - tA.lng);
+
+    // Haversine distance
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distanceMeters = R * c;
+
+    // Bearing
+    const y = Math.sin(dLng) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+    const bearingDeg = (toDeg(Math.atan2(y, x)) + 360) % 360;
+
+    return {
+      targetA: tA,
+      targetB: tB,
+      distanceMeters,
+      distanceKm: distanceMeters / 1000,
+      bearingDeg,
+      bearingText: this.bearingToCompass(bearingDeg),
+      accuracyDelta: Math.abs((tA.accuracy || 0) - (tB.accuracy || 0)),
+      timeDeltaDays: Math.abs(new Date(tB.createdAt || 0) - new Date(tA.createdAt || 0)) / (1000 * 60 * 60 * 24)
+    };
+  }
+
+  bearingToCompass(bearing) {
+    const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    const index = Math.round(bearing / 22.5) % 16;
+    return directions[index];
+  }
+
+  /* --------------------------------------------------------------------------
+     Export / Import / Backup
+     -------------------------------------------------------------------------- */
+  exportToGeoJSON() {
     const features = [];
 
-    // Add Saved Targets as Points
+    // 1. Origins Features
+    this.origins.forEach((o, i) => {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [o.lng, o.lat]
+        },
+        properties: {
+          featureType: 'origin',
+          id: o.id,
+          order: i + 1,
+          label: o.label,
+          distanceMeters: o.distance,
+          unit: o.unit,
+          color: o.color,
+          notes: o.notes
+        }
+      });
+    });
+
+    // 2. Saved Targets Features
     this.savedTargets.forEach(t => {
       features.push({
         type: 'Feature',
@@ -300,146 +357,56 @@ class MarkersManager {
           coordinates: [t.lng, t.lat]
         },
         properties: {
-          type: 'Target',
+          featureType: 'saved_target',
+          id: t.id,
           name: t.name,
           description: t.description,
           category: t.category,
           color: t.color,
-          accuracyMeters: t.accuracy,
-          originsUsedCount: t.originsSnapshot ? t.originsSnapshot.length : 0,
+          accuracy: t.accuracy,
+          mediaCount: t.mediaList ? t.mediaList.length : 0,
           createdAt: t.createdAt
         }
       });
     });
 
-    // Add Origins as Points
-    this.origins.forEach(o => {
-      features.push({
-        type: 'Feature',
-        geometry: {
-          type: 'Point',
-          coordinates: [o.lng, o.lat]
-        },
-        properties: {
-          type: 'Origin',
-          name: o.label,
-          distanceMeters: o.distance,
-          unit: o.unit,
-          color: o.color,
-          createdAt: o.createdAt
-        }
-      });
-    });
-
-    return JSON.stringify({
+    return {
       type: 'FeatureCollection',
-      name: 'GeoTrilateration_Export',
       features
-    }, null, 2);
+    };
   }
 
-  exportKML() {
-    let kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>GeoTrilateración Export</name>
-    <description>Puntos de trilateración y objetivos guardados</description>
-`;
-
-    // Folder for Targets
-    kml += `    <Folder><name>Puntos Finales Encontrados</name>\n`;
-    this.savedTargets.forEach(t => {
-      kml += `      <Placemark>
-        <name>${this.escapeXML(t.name)}</name>
-        <description>${this.escapeXML(t.description)} (Precisión: ±${t.accuracy ? t.accuracy.toFixed(1) : 0}m)</description>
-        <Point>
-          <coordinates>${t.lng},${t.lat},0</coordinates>
-        </Point>
-      </Placemark>\n`;
-    });
-    kml += `    </Folder>\n`;
-
-    // Folder for Origins
-    kml += `    <Folder><name>Puntos de Origen de Medición</name>\n`;
-    this.origins.forEach(o => {
-      kml += `      <Placemark>
-        <name>${this.escapeXML(o.label)}</name>
-        <description>Distancia medida: ${this.formatDistance(o.distance)}</description>
-        <Point>
-          <coordinates>${o.lng},${o.lat},0</coordinates>
-        </Point>
-      </Placemark>\n`;
-    });
-    kml += `    </Folder>\n`;
-
-    kml += `  </Document>\n</kml>`;
-    return kml;
+  exportAllData() {
+    return {
+      app: 'GeoTrilateracion',
+      version: '2.0.0',
+      exportedAt: new Date().toISOString(),
+      origins: this.origins,
+      savedTargets: this.savedTargets,
+      settings: this.settings
+    };
   }
 
-  escapeXML(str) {
-    if (!str) return '';
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  }
-
-  importJSON(jsonString) {
-    try {
-      const data = JSON.parse(jsonString);
-
-      if (data.type === 'FeatureCollection' && Array.isArray(data.features)) {
-        // Import GeoJSON
-        let addedTargets = 0;
-        data.features.forEach(f => {
-          if (f.geometry && f.geometry.type === 'Point' && f.geometry.coordinates) {
-            const [lng, lat] = f.geometry.coordinates;
-            const props = f.properties || {};
-            if (props.type === 'Origin') {
-              this.addOrigin({
-                label: props.name || 'Origen Importado',
-                lat,
-                lng,
-                distance: props.distanceMeters || 1000,
-                unit: props.unit || 'm',
-                color: props.color
-              });
-            } else {
-              this.addTarget({
-                name: props.name || 'Punto Importado',
-                description: props.description || '',
-                category: props.category || 'target',
-                color: props.color || '#10b981',
-                lat,
-                lng,
-                accuracy: props.accuracyMeters || 0
-              });
-              addedTargets++;
-            }
-          }
-        });
-        return { success: true, count: data.features.length };
-      }
-
-      // App JSON backup
-      if (Array.isArray(data.origins)) {
-        this.origins = data.origins;
-      }
-      if (Array.isArray(data.savedTargets)) {
-        this.savedTargets = data.savedTargets;
-      }
-      if (data.settings) {
-        this.settings = { ...this.settings, ...data.settings };
-      }
-
-      this.saveToStorage();
-      return { success: true, count: this.origins.length + this.savedTargets.length };
-    } catch (e) {
-      console.error('Import error:', e);
-      return { success: false, error: e.message };
+  importAllData(data) {
+    if (!data || typeof data !== 'object') return false;
+    if (data.origins && Array.isArray(data.origins)) {
+      this.origins = data.origins;
     }
+    if (data.savedTargets && Array.isArray(data.savedTargets)) {
+      this.savedTargets = data.savedTargets;
+    }
+    if (data.settings && typeof data.settings === 'object') {
+      this.settings = { ...this.settings, ...data.settings };
+    }
+    this.saveToStorage();
+    return true;
+  }
+
+  resetAllData() {
+    this.origins = [];
+    this.savedTargets = [];
+    this.selectedForComparison = [];
+    this.saveToStorage();
   }
 }
 

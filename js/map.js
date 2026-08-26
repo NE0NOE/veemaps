@@ -1,6 +1,6 @@
 /**
- * GeoTrilateration - Map Controller
- * Leaflet map setup, rendering layers, circles, markers and interactive drawing
+ * GeoTrilateración - Map Controller
+ * Leaflet map setup, rendering layers, circles, target markers, comparison lines and interactive drawing
  */
 
 class MapController {
@@ -16,6 +16,7 @@ class MapController {
     this.intersectionsLayer = L.layerGroup();
     this.targetLayer = L.layerGroup();
     this.savedTargetsLayer = L.layerGroup();
+    this.comparisonLayer = L.layerGroup();
     this.tempLayer = L.layerGroup();
     this.selectionLayer = L.layerGroup();
 
@@ -27,9 +28,15 @@ class MapController {
     // Callbacks
     this.onOriginPlaced = options.onOriginPlaced || null;
     this.onOriginMoved = options.onOriginMoved || null;
+    this.onOriginUpdated = options.onOriginUpdated || null;
+    this.onOriginDeleted = options.onOriginDeleted || null;
+    this.onOriginToggled = options.onOriginToggled || null;
     this.onBoxSelected = options.onBoxSelected || null;
     this.onCandidateSelected = options.onCandidateSelected || null;
     this.onSaveCandidate = options.onSaveCandidate || null;
+    this.onSaveEstimatedTarget = options.onSaveEstimatedTarget || null;
+    this.onDismissEstimatedTarget = options.onDismissEstimatedTarget || null;
+    this.onReviewTarget = options.onReviewTarget || null;
   }
 
   /**
@@ -42,14 +49,14 @@ class MapController {
     this.map = L.map(this.containerId, {
       center: defaultCenter,
       zoom: defaultZoom,
-      zoomControl: true,
+      zoomControl: false,
       preferCanvas: true
     });
 
-    // Move zoom control to top-right
-    this.map.zoomControl.setPosition('topright');
+    // Add minimal zoom control top-right
+    L.control.zoom({ position: 'topright' }).addTo(this.map);
 
-    // Base Tile Layers (Multi-layer support)
+    // Base Tile Layers
     this.baseLayers = {
       osm: {
         name: '🗺️ Calles (OpenStreetMap)',
@@ -64,7 +71,7 @@ class MapController {
         name: '🛰️ Satélite (ESRI World Imagery)',
         layer: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
           maxZoom: 18,
-          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
         })
       },
       topo: {
@@ -75,7 +82,7 @@ class MapController {
         })
       },
       carto: {
-        name: '🏙️ CartoDB Positron / Claro',
+        name: '🏙️ CartoDB Claro',
         layer: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
           maxZoom: 19,
           attribution: '&copy; CARTO'
@@ -86,28 +93,13 @@ class MapController {
     this.currentBaseLayerKey = 'osm';
     this.baseLayers.osm.layer.addTo(this.map);
 
-    // Layer control
-    const baseMapsObj = {};
-    for (const [key, val] of Object.entries(this.baseLayers)) {
-      baseMapsObj[val.name] = val.layer;
-    }
-
-    const overlaysObj = {
-      '📍 Orígenes de Medición': this.originsLayer,
-      '⭕ Círculos de Distancia': this.circlesLayer,
-      '🔍 Puntos de Intersección': this.intersectionsLayer,
-      '🎯 Objetivo Estimado': this.targetLayer,
-      '📌 Marcadores Guardados': this.savedTargetsLayer
-    };
-
-    this.layerControl = L.control.layers(baseMapsObj, overlaysObj, { position: 'topright' }).addTo(this.map);
-
-    // Add Layer Groups to Map
+    // Add Layer Groups to Map in strict Z-order
     this.circlesLayer.addTo(this.map);
+    this.comparisonLayer.addTo(this.map);
     this.originsLayer.addTo(this.map);
     this.intersectionsLayer.addTo(this.map);
-    this.targetLayer.addTo(this.map);
     this.savedTargetsLayer.addTo(this.map);
+    this.targetLayer.addTo(this.map);
     this.tempLayer.addTo(this.map);
     this.selectionLayer.addTo(this.map);
 
@@ -115,28 +107,28 @@ class MapController {
     this.setupEvents();
   }
 
+  setBaseLayer(layerKey) {
+    if (!this.baseLayers[layerKey]) return;
+    if (this.currentBaseLayerKey === layerKey) return;
+
+    this.map.removeLayer(this.baseLayers[this.currentBaseLayerKey].layer);
+    this.baseLayers[layerKey].layer.addTo(this.map);
+    this.currentBaseLayerKey = layerKey;
+    return this.baseLayers[layerKey].name;
+  }
+
   cycleBaseLayer() {
     const keys = Object.keys(this.baseLayers);
     const currentIndex = keys.indexOf(this.currentBaseLayerKey);
     const nextIndex = (currentIndex + 1) % keys.length;
     const nextKey = keys[nextIndex];
-
-    this.map.removeLayer(this.baseLayers[this.currentBaseLayerKey].layer);
-    this.baseLayers[nextKey].layer.addTo(this.map);
-    this.currentBaseLayerKey = nextKey;
-    return this.baseLayers[nextKey].name;
+    return this.setBaseLayer(nextKey);
   }
 
-  /**
-   * Event Listeners
-   */
   setupEvents() {
     this.map.on('click', (e) => {
-      if (this.isAddingOriginMode) {
-        if (this.onOriginPlaced) {
-          this.onOriginPlaced(e.latlng);
-        }
-        this.setAddOriginMode(false);
+      if (this.onOriginPlaced) {
+        this.onOriginPlaced(e.latlng);
       }
     });
 
@@ -200,24 +192,15 @@ class MapController {
     this.selectionRectangle = null;
   }
 
-  /**
-   * Fly to coordinates
-   */
   setView(lat, lng, zoom = 14) {
-    this.map.flyTo([lat, lng], zoom, { duration: 1.2 });
+    this.map.flyTo([lat, lng], zoom, { duration: 1.0 });
   }
 
-  /**
-   * Fit map bounds to encompass all active origins and target
-   */
   fitBounds(bounds) {
     if (!bounds || !bounds.isValid || !bounds.isValid()) return;
-    this.map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+    this.map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
   }
 
-  /**
-   * Get Current Map Bounding Box
-   */
   getBounds() {
     return this.map.getBounds();
   }
@@ -226,15 +209,13 @@ class MapController {
     return this.map.getCenter();
   }
 
-  /**
-   * Toggle visibility of specific layer group
-   */
   setLayerVisibility(layerKey, visible) {
     const layerMap = {
       circles: this.circlesLayer,
       origins: this.originsLayer,
       savedTargets: this.savedTargetsLayer,
-      intersections: this.intersectionsLayer
+      intersections: this.intersectionsLayer,
+      target: this.targetLayer
     };
 
     const targetLayer = layerMap[layerKey];
@@ -252,6 +233,89 @@ class MapController {
   }
 
   /**
+   * Open Quick Interactive Placement Popup directly on Map
+   */
+  showQuickOriginPopup(latlng, suggestedLabel, onConfirm) {
+    const defaultDist = 1.5;
+    const defaultUnit = 'km';
+
+    const popupContent = document.createElement('div');
+    popupContent.className = 'map-quick-origin-popup';
+    popupContent.innerHTML = `
+      <div class="popup-title">📍 ${suggestedLabel || 'Nuevo Origen'}</div>
+      <div class="popup-coords">${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}</div>
+      <div class="popup-input-row">
+        <label>Distancia al objetivo:</label>
+        <div class="popup-dist-group">
+          <input type="number" id="quick-dist-input" class="popup-input-dist" value="${defaultDist}" step="any" min="0.01" autofocus>
+          <select id="quick-unit-select" class="popup-select-unit">
+            <option value="km" ${defaultUnit === 'km' ? 'selected' : ''}>km</option>
+            <option value="m" ${defaultUnit === 'm' ? 'selected' : ''}>m</option>
+            <option value="mi">mi</option>
+            <option value="ft">ft</option>
+          </select>
+        </div>
+      </div>
+      <div class="popup-btn-row">
+        <button id="btn-quick-confirm" class="btn btn-sm btn-primary" style="flex: 1;">
+          ✓ Agregar
+        </button>
+        <button id="btn-quick-cancel" class="btn btn-sm btn-secondary">
+          ✕
+        </button>
+      </div>
+    `;
+
+    const popup = L.popup({
+      closeButton: false,
+      autoClose: true,
+      closeOnClick: true,
+      className: 'custom-leaflet-popup'
+    })
+      .setLatLng(latlng)
+      .setContent(popupContent)
+      .openOn(this.map);
+
+    setTimeout(() => {
+      const distInput = popupContent.querySelector('#quick-dist-input');
+      const unitSelect = popupContent.querySelector('#quick-unit-select');
+      const btnConfirm = popupContent.querySelector('#btn-quick-confirm');
+      const btnCancel = popupContent.querySelector('#btn-quick-cancel');
+
+      if (distInput) {
+        distInput.focus();
+        distInput.select();
+        distInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            btnConfirm.click();
+          }
+        });
+      }
+
+      btnConfirm.onclick = () => {
+        const dist = parseFloat(distInput.value);
+        if (isNaN(dist) || dist <= 0) {
+          distInput.style.borderColor = '#ef4444';
+          return;
+        }
+        this.map.closePopup(popup);
+        onConfirm({
+          lat: latlng.lat,
+          lng: latlng.lng,
+          distance: dist,
+          unit: unitSelect.value,
+          label: suggestedLabel
+        });
+      };
+
+      btnCancel.onclick = () => {
+        this.map.closePopup(popup);
+      };
+    }, 50);
+  }
+
+  /**
    * Render Origin Markers & Circles
    */
   renderOrigins(origins, showCircleFill = true) {
@@ -259,21 +323,20 @@ class MapController {
     this.circlesLayer.clearLayers();
 
     origins.forEach((origin, index) => {
-      if (!origin.enabled) return;
-
       const pos = [origin.lat, origin.lng];
       const color = origin.color || '#38bdf8';
+      const isEnabled = origin.enabled !== false;
 
-      // 1. Origin Marker Pin (Draggable)
+      // Origin Marker Pin (Draggable)
       const icon = L.divIcon({
         className: 'custom-origin-marker',
         html: `
-          <div class="origin-marker-pin" style="background: ${color};" title="${origin.label}">
+          <div class="origin-marker-pin ${isEnabled ? '' : 'disabled-origin-pin'}" style="background: ${color};" title="${origin.label}">
             ${index + 1}
           </div>
         `,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14]
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
       });
 
       const marker = L.marker(pos, {
@@ -288,28 +351,91 @@ class MapController {
         }
       });
 
+      const displayDist = origin.unit === 'km'
+        ? (origin.distance / 1000).toFixed(2)
+        : (origin.rawDistance || origin.distance.toFixed(1));
+
       marker.bindPopup(`
-        <div style="font-family: 'Inter', sans-serif; font-size: 13px; color: #0f172a;">
-          <strong>📍 ${origin.label}</strong><br>
-          Distancia: <b>${(origin.distance / 1000).toFixed(2)} km</b> (${origin.distance.toFixed(0)} m)<br>
-          <small style="color: #64748b;">${origin.lat.toFixed(5)}, ${origin.lng.toFixed(5)}</small>
+        <div class="origin-marker-popup">
+          <div class="popup-header-row">
+            <span class="dot-color-badge" style="background: ${color};"></span>
+            <strong>${origin.label}</strong>
+          </div>
+          <div class="popup-subtext font-mono">${origin.lat.toFixed(5)}, ${origin.lng.toFixed(5)}</div>
+          
+          <div class="popup-dist-edit-box">
+            <label>Distancia:</label>
+            <div class="dist-edit-inline">
+              <input type="number" id="popup-origin-dist-${origin.id}" value="${displayDist}" step="any" min="0.01">
+              <span>${origin.unit || 'km'}</span>
+              <button id="btn-popup-update-${origin.id}" class="btn btn-xs btn-primary" title="Guardar distancia">✓</button>
+            </div>
+          </div>
+
+          <div class="popup-action-row">
+            <button id="btn-popup-toggle-${origin.id}" class="btn btn-xs btn-secondary" style="flex: 1;">
+              ${isEnabled ? '👁️ Desactivar' : '👁️ Activar'}
+            </button>
+            <button id="btn-popup-del-${origin.id}" class="btn btn-xs btn-danger" title="Eliminar origen">
+              🗑️
+            </button>
+          </div>
         </div>
-      `);
+      `, { className: 'custom-leaflet-popup' });
+
+      marker.on('popupopen', () => {
+        const distInput = document.getElementById(`popup-origin-dist-${origin.id}`);
+        const btnUpdate = document.getElementById(`btn-popup-update-${origin.id}`);
+        const btnToggle = document.getElementById(`btn-popup-toggle-${origin.id}`);
+        const btnDel = document.getElementById(`btn-popup-del-${origin.id}`);
+
+        if (btnUpdate && distInput && this.onOriginUpdated) {
+          btnUpdate.onclick = () => {
+            const val = parseFloat(distInput.value);
+            if (!isNaN(val) && val > 0) {
+              this.onOriginUpdated(origin.id, { distance: val, unit: origin.unit || 'km' });
+              marker.closePopup();
+            }
+          };
+          distInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              btnUpdate.click();
+            }
+          });
+        }
+
+        if (btnToggle && this.onOriginToggled) {
+          btnToggle.onclick = () => {
+            this.onOriginToggled(origin.id);
+            marker.closePopup();
+          };
+        }
+
+        if (btnDel && this.onOriginDeleted) {
+          btnDel.onclick = () => {
+            this.onOriginDeleted(origin.id);
+            marker.closePopup();
+          };
+        }
+      });
 
       this.originsLayer.addLayer(marker);
 
-      // 2. Geodesic Distance Circle
-      const circle = L.circle(pos, {
-        radius: origin.distance,
-        color: color,
-        weight: 2.5,
-        opacity: 0.85,
-        fillColor: color,
-        fillOpacity: showCircleFill ? 0.08 : 0,
-        dashArray: '3, 3'
-      });
+      // Geodesic Distance Circle
+      if (isEnabled) {
+        const circle = L.circle(pos, {
+          radius: origin.distance,
+          color: color,
+          weight: 2.5,
+          opacity: 0.85,
+          fillColor: color,
+          fillOpacity: showCircleFill ? 0.08 : 0,
+          dashArray: '3, 3'
+        });
 
-      this.circlesLayer.addLayer(circle);
+        this.circlesLayer.addLayer(circle);
+      }
     });
   }
 
@@ -323,44 +449,45 @@ class MapController {
     intersections.forEach((pt, idx) => {
       const isApprox = pt.isApproximate;
       const isTang = pt.isTangent;
-      const label = isTang ? 'Punto Tangente' : (isApprox ? 'Punto Aproximado' : `Punto Candidato ${idx + 1}`);
+      const label = isTang ? 'Punto Tangente' : (isApprox ? 'Punto Aproximado' : `Candidato ${idx + 1}`);
 
       const icon = L.divIcon({
         className: 'custom-intersection-marker',
-        html: `<div class="intersection-candidate-marker" title="${label}"></div>`,
-        iconSize: [20, 20],
-        iconAnchor: [10, 10]
+        html: `<div class="intersection-candidate-marker" title="${label}">${idx + 1}</div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
       });
 
       const marker = L.marker([pt.lat, pt.lng], { icon });
 
       marker.bindPopup(`
-        <div style="font-family: 'Inter', sans-serif; font-size: 13px; color: #0f172a; min-width: 220px; padding: 2px;">
-          <strong style="color: #0284c7; font-size: 14px; display: block; margin-bottom: 4px;">🎯 ${label}</strong>
-          <b>Lat:</b> ${pt.lat.toFixed(6)}<br>
-          <b>Lng:</b> ${pt.lng.toFixed(6)}<br>
-          ${pt.gap !== undefined ? `<small style="color: #f59e0b; display: block; margin-top: 2px;">Aproximación (brecha: ${pt.gap.toFixed(1)}m)</small>` : ''}
-          <div style="margin-top: 10px; display: flex; gap: 6px;">
-            <button id="btn-save-cand-${idx}" style="flex: 1; padding: 6px 8px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">
-              💾 Guardar
+        <div class="candidate-popup-card">
+          <strong class="candidate-popup-title">🎯 ${label}</strong>
+          <div class="popup-subtext font-mono">${pt.lat.toFixed(6)}, ${pt.lng.toFixed(6)}</div>
+          ${pt.gap !== undefined ? `<small class="candidate-gap">Brecha: ${pt.gap.toFixed(1)}m</small>` : ''}
+          <div class="candidate-popup-actions">
+            <button id="btn-save-cand-${idx}" class="btn btn-sm btn-primary" style="flex: 1;">
+              💾 Guardar en DB
             </button>
-            <button id="btn-select-cand-${idx}" style="flex: 1; padding: 6px 8px; background: #0284c7; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">
+            <button id="btn-select-cand-${idx}" class="btn btn-sm btn-secondary">
               🎯 Fijar
             </button>
           </div>
         </div>
-      `);
+      `, { className: 'custom-leaflet-popup' });
 
       marker.on('popupopen', () => {
         const btnSave = document.getElementById(`btn-save-cand-${idx}`);
         if (btnSave && this.onSaveCandidate) {
           btnSave.onclick = () => {
+            marker.closePopup();
             this.onSaveCandidate(pt, idx);
           };
         }
         const btnSelect = document.getElementById(`btn-select-cand-${idx}`);
         if (btnSelect && this.onCandidateSelected) {
           btnSelect.onclick = () => {
+            marker.closePopup();
             this.onCandidateSelected(pt, idx);
           };
         }
@@ -371,154 +498,177 @@ class MapController {
   }
 
   /**
-   * Render Calculated Estimated Target
+   * Render Calculated Estimated Target (Exact Solved Point)
    */
   renderTarget(target) {
     this.targetLayer.clearLayers();
-    if (!target) return;
+    if (!target || !target.lat || !target.lng) return;
 
     const pos = [target.lat, target.lng];
 
-    // Pulsing Target Marker
+    // Prominent High-Visibility Target Pin (Bullseye / Radar pulse)
     const icon = L.divIcon({
       className: 'custom-target-marker',
       html: `
-        <div class="target-marker-pin" title="Punto Final Estimado">
-          🎯
+        <div class="target-marker-wrapper">
+          <div class="target-radar-ring"></div>
+          <div class="target-marker-pin" title="🎯 Punto Final Localizado">
+            🎯
+          </div>
+          <div class="target-label-badge">OBJETIVO</div>
         </div>
       `,
-      iconSize: [34, 34],
-      iconAnchor: [17, 17]
+      iconSize: [48, 48],
+      iconAnchor: [24, 24]
     });
 
-    const marker = L.marker(pos, { icon });
+    const marker = L.marker(pos, { icon, zIndexOffset: 1000 });
     marker.bindPopup(`
-      <div style="font-family: 'Inter', sans-serif; font-size: 13px; color: #0f172a; min-width: 210px;">
-        <strong style="color: #10b981; font-size: 14px;">🎯 Punto Final Estimado</strong><br>
-        <b>Lat:</b> ${target.lat.toFixed(6)}<br>
-        <b>Lng:</b> ${target.lng.toFixed(6)}<br>
-        <b>Precisión:</b> ±${target.accuracyMeters.toFixed(1)} m
-        <div style="margin-top: 10px; display: flex; gap: 6px;">
-          <button id="btn-popup-save-estimated" style="flex: 1; padding: 5px 8px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;">
-            💾 Guardar
+      <div class="target-popup-card">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="font-size: 18px;">🎯</span>
+          <strong class="target-popup-title">Punto Final Localizado</strong>
+        </div>
+        <div class="popup-subtext font-mono" style="font-size: 13px; font-weight: 600;">
+          ${target.lat.toFixed(6)}, ${target.lng.toFixed(6)}
+        </div>
+        <div class="target-accuracy-pill">
+          Precisión: ±${target.accuracyMeters ? target.accuracyMeters.toFixed(1) : (target.accuracy ? target.accuracy.toFixed(1) : 0.0)} m
+        </div>
+        
+        <div class="target-popup-actions">
+          <button id="btn-popup-save-estimated" class="btn btn-sm btn-primary" style="flex: 1;">
+            💾 Guardar en Base de Datos
           </button>
-          <button id="btn-popup-dismiss-estimated" style="padding: 5px 8px; background: #ef444422; color: #ef4444; border: 1px solid #ef444466; border-radius: 6px; cursor: pointer; font-size: 12px;">
-            ❌ Descartar
+          <button id="btn-popup-dismiss-estimated" class="btn btn-sm btn-ghost" title="Descartar">
+            ✕
           </button>
         </div>
       </div>
-    `);
+    `, { className: 'custom-leaflet-popup' });
 
     marker.on('popupopen', () => {
       const btnSave = document.getElementById('btn-popup-save-estimated');
-      if (btnSave && this.options.onSaveEstimatedTarget) {
-        btnSave.onclick = () => this.options.onSaveEstimatedTarget(target);
+      if (btnSave && this.onSaveEstimatedTarget) {
+        btnSave.onclick = () => {
+          marker.closePopup();
+          this.onSaveEstimatedTarget(target);
+        };
       }
       const btnDismiss = document.getElementById('btn-popup-dismiss-estimated');
-      if (btnDismiss && this.options.onDismissEstimatedTarget) {
-        btnDismiss.onclick = () => this.options.onDismissEstimatedTarget();
+      if (btnDismiss && this.onDismissEstimatedTarget) {
+        btnDismiss.onclick = () => {
+          marker.closePopup();
+          this.onDismissEstimatedTarget();
+        };
       }
     });
 
     this.targetLayer.addLayer(marker);
 
     // Confidence / Uncertainty circle
-    if (target.confidenceRadius && target.confidenceRadius > 1) {
+    const radius = target.confidenceRadius || (target.accuracyMeters ? Math.max(target.accuracyMeters * 1.96, 5) : 5);
+    if (radius > 1) {
       const confidenceCircle = L.circle(pos, {
-        radius: target.confidenceRadius,
+        radius: radius,
         color: '#10b981',
-        weight: 1.5,
+        weight: 2,
         fillColor: '#10b981',
-        fillOpacity: 0.15
+        fillOpacity: 0.15,
+        dashArray: '4, 4'
       });
       this.targetLayer.addLayer(confidenceCircle);
     }
   }
 
   /**
-   * Render Saved Target Markers with Multimedia Previews, Edit & Delete actions
+   * Render Saved Target Markers from Local Database
    */
-  renderSavedTargets(savedTargets, onEditTarget, onDeleteTarget) {
+  renderSavedTargets(savedTargets, onEditTarget, onDeleteTarget, onReviewTarget) {
     this.savedTargetsLayer.clearLayers();
 
     savedTargets.forEach(t => {
+      if (t.visible === false) return;
+
       const color = t.color || '#0284c7';
       const icon = L.divIcon({
         className: 'custom-saved-marker',
         html: `
-          <div style="
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: ${color};
-            border: 2px solid #ffffff;
-            box-shadow: 0 0 12px ${color}88, 0 2px 8px rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 15px;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-          " title="${t.name}">
-            📌
+          <div class="saved-marker-wrapper">
+            <div style="
+              width: 32px;
+              height: 32px;
+              border-radius: 50%;
+              background: ${color};
+              border: 2px solid #ffffff;
+              box-shadow: 0 0 14px ${color}aa, 0 2px 8px rgba(0,0,0,0.5);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 15px;
+              cursor: pointer;
+            " title="${t.name}">
+              📌
+            </div>
+            <span class="saved-marker-name-tag" style="background: ${color};">${t.name}</span>
           </div>
         `,
         iconSize: [32, 32],
         iconAnchor: [16, 16]
       });
 
-      const marker = L.marker([t.lat, t.lng], { icon });
+      const marker = L.marker([t.lat, t.lng], { icon, zIndexOffset: 500 });
 
-      // Generate media preview html if target has attached photos/videos
       let mediaPreviewHtml = '';
       if (t.mediaList && t.mediaList.length > 0) {
         mediaPreviewHtml = `
-          <div style="margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 6px;">
-            <div style="font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 4px;">
+          <div style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;">
+            <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">
               📷 Archivos Adjuntos (${t.mediaList.length}):
             </div>
             <div style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
-              ${t.mediaList.map(m => {
-                if (m.type && m.type.startsWith('video/')) {
-                  return `
-                    <div style="width: 54px; height: 54px; background: #0f172a; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; flex-shrink: 0; border: 1px solid #38bdf8;" title="${m.name}">
-                      🎥
-                    </div>
-                  `;
-                }
-                return `
-                  <img src="${m.dataUrl || m.thumbnail || ''}" style="width: 54px; height: 54px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid #cbd5e1;" title="${m.name}" alt="${m.name}">
-                `;
-              }).join('')}
+              ${t.mediaList.map(m => `
+                <img src="${m.dataUrl || m.thumbnail || ''}" style="width: 48px; height: 48px; object-fit: cover; border-radius: 6px; flex-shrink: 0; border: 1px solid var(--border-color);" title="${m.name}" alt="${m.name}">
+              `).join('')}
             </div>
           </div>
         `;
       }
 
       marker.bindPopup(`
-        <div style="font-family: 'Inter', sans-serif; font-size: 13px; color: #0f172a; min-width: 220px;">
+        <div class="saved-marker-popup">
           <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
             <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: ${color}; box-shadow: 0 0 6px ${color}; flex-shrink: 0;"></span>
             <strong style="color: ${color}; font-size: 14px;">${t.name}</strong>
           </div>
-          <p style="margin: 4px 0 6px 0; color: #475569; font-size: 12px;">${t.description || 'Sin descripción'}</p>
-          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #64748b;">
-            <span>📍 ${t.lat.toFixed(5)}, ${t.lng.toFixed(5)}</span>
-            <span style="background: #10b98122; color: #059669; padding: 2px 6px; border-radius: 99px; font-weight: 600;">±${t.accuracy ? t.accuracy.toFixed(1) : 0}m</span>
+          <p style="margin: 4px 0 6px 0; color: var(--text-secondary); font-size: 12px;">${t.description || 'Sin notas de campo.'}</p>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+            <span class="font-mono">${t.lat.toFixed(5)}, ${t.lng.toFixed(5)}</span>
+            <span class="badge badge-success">±${t.accuracy ? t.accuracy.toFixed(1) : 0}m</span>
           </div>
           ${mediaPreviewHtml}
-          <div style="margin-top: 10px; display: flex; gap: 6px;">
-            <button id="btn-popup-edit-${t.id}" style="flex: 1; padding: 6px 8px; background: #0284c7; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
+          <div style="margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap;">
+            <button id="btn-popup-review-${t.id}" class="btn btn-xs btn-outline" style="flex: 1;" title="Cargar medición para revisión">
+              🔄 Revisar
+            </button>
+            <button id="btn-popup-edit-${t.id}" class="btn btn-xs btn-primary" style="flex: 1;">
               ✏️ Editar
             </button>
-            <button id="btn-popup-delete-${t.id}" style="padding: 6px 10px; background: #ef444422; color: #ef4444; border: 1px solid #ef444466; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; display: flex; align-items: center; justify-content: center;" title="Eliminar este marcador">
+            <button id="btn-popup-delete-${t.id}" class="btn btn-xs btn-outline-danger" title="Eliminar este marcador">
               🗑️
             </button>
           </div>
         </div>
-      `);
+      `, { className: 'custom-leaflet-popup' });
 
       marker.on('popupopen', () => {
+        const btnReview = document.getElementById(`btn-popup-review-${t.id}`);
+        if (btnReview && onReviewTarget) {
+          btnReview.onclick = () => {
+            marker.closePopup();
+            onReviewTarget(t.id);
+          };
+        }
         const btnEdit = document.getElementById(`btn-popup-edit-${t.id}`);
         if (btnEdit && onEditTarget) {
           btnEdit.onclick = () => {
@@ -540,14 +690,65 @@ class MapController {
   }
 
   /**
+   * Render Comparison Line & Measurements between 2 Targets
+   */
+  renderComparison(targetA, targetB, comparisonData) {
+    this.comparisonLayer.clearLayers();
+    if (!targetA || !targetB) return;
+
+    const latlngs = [
+      [targetA.lat, targetA.lng],
+      [targetB.lat, targetB.lng]
+    ];
+
+    // Glowing Geodesic Line
+    const polyline = L.polyline(latlngs, {
+      color: '#38bdf8',
+      weight: 3.5,
+      opacity: 0.9,
+      dashArray: '6, 6'
+    });
+    this.comparisonLayer.addLayer(polyline);
+
+    // Midpoint measurement badge
+    const midLat = (targetA.lat + targetB.lat) / 2;
+    const midLng = (targetA.lng + targetB.lng) / 2;
+
+    const distText = comparisonData.distanceMeters >= 1000
+      ? `${comparisonData.distanceKm.toFixed(2)} km`
+      : `${comparisonData.distanceMeters.toFixed(1)} m`;
+
+    const badgeIcon = L.divIcon({
+      className: 'comparison-line-badge',
+      html: `
+        <div class="comparison-pill">
+          📏 ${distText} • ${comparisonData.bearingDeg.toFixed(0)}° (${comparisonData.bearingText})
+        </div>
+      `,
+      iconSize: [160, 24],
+      iconAnchor: [80, 12]
+    });
+
+    const badgeMarker = L.marker([midLat, midLng], { icon: badgeIcon });
+    this.comparisonLayer.addLayer(badgeMarker);
+
+    // Fit view to encompass both targets
+    const bounds = L.latLngBounds(latlngs);
+    this.fitBounds(bounds);
+  }
+
+  clearComparison() {
+    this.comparisonLayer.clearLayers();
+  }
+
+  /**
    * Calculate all-encompassing bounds for active elements
    */
   getAllBounds(origins, target) {
     const latLngs = [];
     origins.forEach(o => {
-      if (o.enabled) {
+      if (o.enabled !== false) {
         latLngs.push([o.lat, o.lng]);
-        // Also add boundary extremes of circle
         const latDelta = (o.distance / 111320);
         const lngDelta = (o.distance / (111320 * Math.cos((o.lat * Math.PI) / 180)));
         latLngs.push([o.lat + latDelta, o.lng]);
@@ -557,7 +758,7 @@ class MapController {
       }
     });
 
-    if (target) {
+    if (target && target.lat && target.lng) {
       latLngs.push([target.lat, target.lng]);
     }
 

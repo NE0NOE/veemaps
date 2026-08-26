@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>GeoTrilateración - Localizador & Mapas Offline</title>
+  <title>GeoTrilateración - Localizador Geodésico & Mapas Offline</title>
   <meta name="description" content="Localizador geográfico de puntos mediante trilateración y multilateración geodésica con soporte completo para mapas offline.">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
@@ -33,19 +33,13 @@
         </div>
         <div class="brand-text">
           <h1>GeoTrilateración</h1>
-          <span class="badge badge-pulse">Localizador Geodésico</span>
+          <span id="app-status-badge" class="badge badge-pulse">Listo</span>
         </div>
       </div>
 
       <div class="top-actions">
-        <!-- New Measurement Session Button -->
-        <button id="btn-new-measurement" class="btn btn-outline" title="Iniciar Nueva Medición (Limpia orígenes activos sin borrar guardados)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"></path></svg>
-          <span class="btn-text">Nueva Medición</span>
-        </button>
-
         <!-- Quick Coordinates / GPS -->
-        <button id="btn-gps" class="btn btn-secondary btn-icon" title="Mi Ubicación GPS">
+        <button id="btn-gps" class="btn btn-secondary" title="Mi Ubicación GPS">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
           <span class="btn-text">GPS</span>
         </button>
@@ -58,14 +52,14 @@
           </button>
           <div class="dropdown-menu" id="presets-menu">
             <button class="dropdown-item" data-lat="12.1364" data-lng="-86.2514" data-zoom="13">🇳🇮 Managua (Centro)</button>
-            <button class="dropdown-item" data-lat="12.1150" data-lng="-86.2360" data-zoom="14">📍 Managua (Metrocentro / Galerías)</button>
-            <button class="dropdown-item" data-lat="11.9344" data-lng="-85.9560" data-zoom="14">🏛️ Granada (Nicaragua)</button>
-            <button class="dropdown-item" data-lat="12.4379" data-lng="-86.8780" data-zoom="14">⛪ León (Nicaragua)</button>
+            <button class="dropdown-item" data-lat="12.1150" data-lng="-86.2360" data-zoom="14">📍 Metrocentro / Galerías</button>
+            <button class="dropdown-item" data-lat="11.9344" data-lng="-85.9560" data-zoom="14">🏛️ Granada</button>
+            <button class="dropdown-item" data-lat="12.4379" data-lng="-86.8780" data-zoom="14">⛪ León</button>
             <button class="dropdown-item" data-lat="11.9845" data-lng="-86.0945" data-zoom="14">🌋 Masaya</button>
             <hr>
-            <button class="dropdown-item" data-lat="9.9281" data-lng="-84.0907" data-zoom="13">🇨🇷 San José (Costa Rica)</button>
-            <button class="dropdown-item" data-lat="13.6929" data-lng="-89.2182" data-zoom="13">🇸🇻 San Salvador (El Salvador)</button>
-            <button class="dropdown-item" data-lat="14.0723" data-lng="-87.1921" data-zoom="13">🇭🇳 Tegucigalpa (Honduras)</button>
+            <button class="dropdown-item" data-lat="9.9281" data-lng="-84.0907" data-zoom="13">🇨🇷 San José (CR)</button>
+            <button class="dropdown-item" data-lat="13.6929" data-lng="-89.2182" data-zoom="13">🇸🇻 San Salvador</button>
+            <button class="dropdown-item" data-lat="14.0723" data-lng="-87.1921" data-zoom="13">🇭🇳 Tegucigalpa</button>
             <button class="dropdown-item" data-lat="14.6349" data-lng="-90.5069" data-zoom="13">🇬🇹 Cd. de Guatemala</button>
             <hr>
             <button class="dropdown-item" id="btn-custom-coords">🌐 Ir a Coordenadas...</button>
@@ -73,9 +67,9 @@
         </div>
 
         <!-- Offline Manager Button -->
-        <button id="btn-open-offline" class="btn btn-outline" title="Gestor de Mapas Offline">
+        <button id="btn-open-offline" class="btn btn-secondary" title="Gestor de Mapas Offline">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-          <span class="btn-text">Mapas Offline</span>
+          <span class="btn-text">Offline</span>
           <span id="offline-badge" class="badge badge-success">Activo</span>
         </button>
 
@@ -86,9 +80,10 @@
         </button>
 
         <!-- Toggle Sidebar -->
-        <button id="btn-toggle-sidebar" class="btn btn-secondary toggle-sidebar-btn" title="Ocultar / Mostrar Barra Lateral">
+        <button id="btn-toggle-sidebar" class="btn btn-secondary toggle-sidebar-btn" title="Ocultar / Mostrar Panel Lateral">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-          <span class="btn-text">Panel Lateral</span>
+          <span class="btn-text">Panel</span>
+          <span id="panel-counter-badge" class="badge badge-info">0</span>
         </button>
       </div>
     </header>
@@ -98,98 +93,107 @@
       <!-- Map Container -->
       <div id="map" class="map-view"></div>
 
-      <!-- Floating Map Controls HUD -->
+      <!-- Floating Map Controls & Dynamic Island HUD -->
       <div class="map-hud-overlay">
-        <!-- Telemetry & Target Solver Status Banner -->
-        <div id="telemetry-banner" class="telemetry-card glassmorphism">
-          <div class="telemetry-header">
-            <div class="status-indicator">
+        <div id="unified-hud-card" class="unified-hud glassmorphism">
+          <!-- Main Action & Status Bar -->
+          <div class="hud-top-bar">
+            <button id="btn-add-origin-mode" class="btn btn-primary" title="Toca el mapa o pulsa aquí para agregar un origen">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+              <span id="btn-add-origin-text">+ Agregar Origen</span>
+            </button>
+
+            <div class="hud-status-chip">
               <span class="pulse-dot" id="status-dot"></span>
               <span id="solver-status-title" class="status-title">Sin orígenes</span>
             </div>
-            <button id="btn-minimize-hud" class="btn-minimize" title="Minimizar">▼</button>
+
+            <div class="hud-quick-actions">
+              <button id="btn-quick-new" class="btn btn-icon btn-secondary" title="Limpiar sesión actual / Nueva medición">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              </button>
+              <button id="btn-fit-bounds" class="btn btn-icon btn-secondary" title="Ajustar vista a todos los puntos">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+              </button>
+              
+              <!-- Map Layers & Visibility Dropdown -->
+              <div class="dropdown layers-dropdown">
+                <button id="btn-map-layers-menu" class="btn btn-icon btn-secondary" title="Capas de mapa y visibilidad">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                </button>
+                <div class="dropdown-menu dropdown-menu-right" id="layers-menu-popup">
+                  <div class="dropdown-section-title">Mapa Base</div>
+                  <button class="dropdown-item layer-choice active" data-layer-key="osm">🗺️ Calles (OpenStreetMap)</button>
+                  <button class="dropdown-item layer-choice" data-layer-key="satellite">🛰️ Satélite (ESRI)</button>
+                  <button class="dropdown-item layer-choice" data-layer-key="topo">🏔️ Topográfico</button>
+                  <button class="dropdown-item layer-choice" data-layer-key="carto">🏙️ CartoDB Claro</button>
+                  <hr>
+                  <div class="dropdown-section-title">Capas Visibles</div>
+                  <label class="layer-toggle-row">
+                    <input type="checkbox" id="check-vis-circles" checked>
+                    <span>⭕ Círculos de Distancia</span>
+                  </label>
+                  <label class="layer-toggle-row">
+                    <input type="checkbox" id="check-vis-origins" checked>
+                    <span>📍 Puntos de Origen</span>
+                  </label>
+                  <label class="layer-toggle-row">
+                    <input type="checkbox" id="check-vis-targets" checked>
+                    <span>📌 Puntos Guardados</span>
+                  </label>
+                </div>
+              </div>
+
+              <button id="btn-minimize-hud" class="btn btn-icon btn-ghost" title="Plegar / Desplegar detalles">▼</button>
+            </div>
           </div>
+
+          <!-- Dynamic Telemetry / Solver Details Body -->
           <div id="telemetry-body" class="telemetry-content">
             <p id="solver-message" class="solver-hint">
-              Haz clic en el mapa o pulsa <strong>"+ Agregar Origen"</strong> para iniciar la búsqueda de tu punto final.
+              💡 Haz clic en cualquier lugar del mapa para agregar tu punto de origen y distancia.
             </p>
+
             <!-- 2-Origins Candidate Intersections Box -->
             <div id="target-candidates-box" class="candidates-display hidden">
               <div class="candidates-title-row">
-                <span class="candidates-title-text">📍 Puntos Candidatos Encontrados:</span>
-                <span class="badge badge-info" id="candidates-count-badge">2</span>
+                <span class="candidates-title-text">📍 2 Candidatos Encontrados:</span>
+                <small style="color: var(--text-secondary);">Selecciona uno para guardarlo o agrega un 3er origen.</small>
               </div>
               <div id="candidates-list" class="candidates-list"></div>
             </div>
+
+            <!-- Solved Target Coordinates Box (3+ Origins) -->
             <div id="target-coordinates-box" class="coordinates-display hidden">
               <div class="coord-row">
                 <span class="coord-label">🎯 Objetivo Estimado:</span>
                 <span id="target-coords-text" class="coord-val font-mono">--</span>
               </div>
               <div class="coord-subrow">
-                <span id="target-accuracy-badge" class="badge badge-info">Precisión: ±0m</span>
-                <span id="target-method-badge" class="badge badge-secondary">Método: --</span>
+                <span id="target-accuracy-badge" class="badge badge-success">Precisión: ±0.0m</span>
+                <span id="target-method-badge" class="badge badge-secondary">Método: Mínimos Cuadrados</span>
               </div>
               <div class="action-buttons-compact">
                 <button id="btn-save-as-target" class="btn btn-sm btn-primary">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                  Guardar
-                </button>
-                <button id="btn-dismiss-target" class="btn btn-sm btn-danger" title="Descartar este objetivo calculado actual">
-                  ❌ Descartar
+                  Guardar Punto
                 </button>
                 <button id="btn-copy-coords" class="btn btn-sm btn-outline" title="Copiar Coordenadas">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  Copiar
                 </button>
                 <button id="btn-center-target" class="btn btn-sm btn-ghost" title="Centrar en el mapa">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
+                  Centrar
                 </button>
               </div>
             </div>
           </div>
         </div>
-
-        <!-- Quick Mode Floating Bar with Map Clean-up Layer Toggles -->
-        <div class="quick-action-bar glassmorphism">
-          <button id="btn-add-origin-mode" class="btn btn-primary" title="Hacer clic en el mapa para situar tu punto de origen">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
-            <span>+ Agregar Origen</span>
-          </button>
-          <button id="btn-quick-new" class="btn btn-secondary" title="Nueva Medición">
-            <span>✨ Nueva</span>
-          </button>
-          <button id="btn-clear-origins" class="btn btn-danger btn-icon" title="Limpiar todos los orígenes actuales">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-          </button>
-          <div class="divider-v"></div>
-          <!-- Clean-up Map Visibility Toggles -->
-          <button id="btn-toggle-vis-circles" class="btn btn-secondary btn-icon active-toggle" title="Ocultar/Mostrar Círculos de Distancia">
-            ⭕
-          </button>
-          <button id="btn-toggle-vis-origins" class="btn btn-secondary btn-icon active-toggle" title="Ocultar/Mostrar Puntos de Origen">
-            📍
-          </button>
-          <button id="btn-toggle-vis-targets" class="btn btn-secondary btn-icon active-toggle" title="Ocultar/Mostrar Puntos Guardados">
-            📌
-          </button>
-          <div class="divider-v"></div>
-          <button id="btn-fit-bounds" class="btn btn-secondary btn-icon" title="Ajustar vista a todos los puntos">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
-          </button>
-          <button id="btn-toggle-layers" class="btn btn-secondary btn-icon" title="Capas de mapa (Satélite, Calles, Topo)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
-          </button>
-        </div>
       </div>
 
       <!-- Collapsible Control Panel (Sidebar) -->
       <aside id="sidebar" class="sidebar glassmorphism">
-        <!-- Pestaña lateral para plegar / desplegar panel -->
-        <button id="btn-sidebar-collapse" class="sidebar-drawer-tab" title="Ocultar / Desplegar Panel Lateral">
-          <span id="sidebar-collapse-icon" class="drawer-icon">▶</span>
-          <span class="drawer-text">PANEL</span>
-        </button>
-
         <!-- Sidebar Tabs -->
         <div class="sidebar-tabs">
           <button class="tab-btn active" data-tab="tab-origins">
@@ -198,7 +202,7 @@
           </button>
           <button class="tab-btn" data-tab="tab-saved-markers">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-            <span>Puntos Guardados (<span id="saved-count">0</span>)</span>
+            <span>Guardados (<span id="saved-count">0</span>)</span>
           </button>
           <button class="tab-btn" data-tab="tab-settings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
@@ -209,93 +213,89 @@
 
         <!-- TAB 1: ORIGINS (Mediciones) -->
         <div id="tab-origins" class="tab-content active">
-          <div class="tab-header">
-            <h3>Puntos de Origen y Distancias</h3>
-            <p class="tab-subtitle">Indica tu ubicación y la distancia al punto final.</p>
+          <div class="origins-tab-toolbar">
+            <button id="btn-toggle-manual-form" class="btn btn-sm btn-outline">
+              ➕ Ingresar Manual
+            </button>
+            <button id="btn-clear-all-origins" class="btn btn-sm btn-outline-danger">
+              🗑️ Limpiar Todo
+            </button>
           </div>
 
-          <!-- Add / Edit Origin Form Card -->
-          <div class="card origin-form-card" id="origin-form-card">
-            <div class="origin-form-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-              <h4 class="card-title" id="origin-form-title" style="margin-bottom: 0;">
-                <span class="step-num" id="origin-form-badge">1</span> <span id="origin-form-heading">Nuevo Punto de Origen</span>
-              </h4>
-              <button id="btn-cancel-edit-origin" class="btn btn-xs btn-outline hidden" title="Cancelar edición y crear nuevo punto">✕ Cancelar</button>
+          <!-- Collapsible Manual Coordinate Form -->
+          <div id="manual-origin-card" class="card manual-form-card hidden">
+            <div class="manual-form-header">
+              <h4 class="card-title" style="margin-bottom: 0;">📍 Nuevo Origen Manual</h4>
+              <button id="btn-cancel-manual-form" class="btn-close-icon" title="Cerrar formulario">✕</button>
             </div>
-            <input type="hidden" id="input-editing-origin-id" value="">
-
             <div class="form-group">
               <label>Etiqueta / Nombre:</label>
-              <input type="text" id="input-origin-label" class="form-control" placeholder="Ej: Origen 1 (Casa), Punto A...">
+              <input type="text" id="manual-input-label" class="form-control" placeholder="Ej: Origen 1">
             </div>
-
             <div class="form-row">
               <div class="form-group col-7">
-                <label>Distancia al Objetivo:</label>
-                <input type="number" id="input-origin-distance" class="form-control font-mono" placeholder="Ej: 1500" step="any" min="0.1">
+                <label>Distancia:*</label>
+                <input type="number" id="manual-input-dist" class="form-control font-mono" placeholder="1.5" step="any" min="0.01" required>
               </div>
               <div class="form-group col-5">
                 <label>Unidad:</label>
-                <select id="select-origin-unit" class="form-control">
-                  <option value="m">Metros (m)</option>
-                  <option value="km" selected>Kilómetros (km)</option>
-                  <option value="mi">Millas (mi)</option>
-                  <option value="ft">Pies (ft)</option>
+                <select id="manual-select-unit" class="form-control">
+                  <option value="km" selected>km</option>
+                  <option value="m">metros</option>
+                  <option value="mi">millas</option>
+                  <option value="ft">pies</option>
                 </select>
               </div>
             </div>
-
             <div class="form-row">
               <div class="form-group col-6">
-                <label>Latitud:</label>
-                <input type="number" id="input-origin-lat" class="form-control font-mono" placeholder="12.1364..." step="any">
+                <label>Latitud:*</label>
+                <input type="number" id="manual-input-lat" class="form-control font-mono" placeholder="12.1364" step="any" required>
               </div>
               <div class="form-group col-6">
-                <label>Longitud:</label>
-                <input type="number" id="input-origin-lng" class="form-control font-mono" placeholder="-86.2514..." step="any">
+                <label>Longitud:*</label>
+                <input type="number" id="manual-input-lng" class="form-control font-mono" placeholder="-86.2514" step="any" required>
               </div>
             </div>
-
-            <div class="form-actions">
-              <button id="btn-submit-origin" class="btn btn-primary btn-block">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                <span id="btn-submit-origin-text">Guardar y Calcular</span>
-              </button>
-              <button id="btn-use-map-center" class="btn btn-secondary btn-sm" title="Usar centro actual del mapa">
-                📍 Usar Centro de Mapa
-              </button>
+            <div class="form-actions-inline">
+              <button id="btn-submit-manual-origin" class="btn btn-primary btn-sm btn-block">Guardar y Calcular</button>
             </div>
           </div>
 
           <!-- Origins List -->
           <div class="origins-list-container">
             <div class="section-title-row">
-              <h4>Mediciones Activas</h4>
-              <div style="display: flex; align-items: center; gap: 6px;">
-                <span class="badge badge-info" style="font-size: 10px; cursor: help;" title="Selecciona un origen y usa Ctrl + Flecha Arriba / Abajo para intercambiar su orden">⌨️ Ctrl + ▲ / ▼</span>
-                <span class="helper-text" id="origins-helper-text">0 registradas</span>
-              </div>
+              <h4>Orígenes Activos</h4>
+              <span class="helper-text" id="origins-helper-text">0 registrados</span>
             </div>
             <div id="origins-list" class="origins-list">
-              <!-- Rendered dynamically -->
-              <div class="empty-state">
-                <div class="empty-icon">📍</div>
-                <p>No has agregado puntos de origen todavía.</p>
-                <small>Haz clic en el mapa o usa el formulario superior.</small>
-              </div>
+              <!-- Dynamically populated -->
             </div>
           </div>
         </div>
 
-        <!-- TAB 2: SAVED TARGETS (Puntos Finales Guardados) -->
+        <!-- TAB 2: SAVED TARGETS (Base de Datos de Puntos Finales & Comparación) -->
         <div id="tab-saved-markers" class="tab-content">
-          <div class="tab-header">
-            <h3>Puntos Finales Guardados</h3>
-            <p class="tab-subtitle">Historial de objetivos localizados con descripciones y notas.</p>
+          <div class="database-tab-toolbar">
+            <button id="btn-toggle-compare-mode" class="btn btn-sm btn-outline">
+              ⚖️ Comparar Puntos
+            </button>
+            <span class="helper-text" id="database-count-helper">0 puntos en base de datos</span>
+          </div>
+
+          <!-- Comparison Results Card (Shows up when 2 targets are selected) -->
+          <div id="comparison-card" class="card comparison-card hidden">
+            <div class="comparison-header">
+              <h4 class="card-title" style="margin-bottom: 0;">⚖️ Comparación Geodésica</h4>
+              <button id="btn-close-comparison" class="btn-close-icon" title="Cerrar comparativa">✕</button>
+            </div>
+            <div id="comparison-body" class="comparison-body">
+              <p class="helper-text">Selecciona 2 puntos con las casillas para calcular su distancia, azimut y diferencias.</p>
+            </div>
           </div>
 
           <div class="search-bar">
-            <input type="text" id="input-search-saved" class="form-control" placeholder="🔍 Buscar por nombre o descripción...">
+            <input type="text" id="input-search-saved" class="form-control" placeholder="🔍 Buscar por nombre, descripción o categoría...">
           </div>
 
           <!-- Color Swatch Filter Bar -->
@@ -311,11 +311,6 @@
 
           <div id="saved-markers-list" class="saved-list">
             <!-- Dynamic items -->
-            <div class="empty-state">
-              <div class="empty-icon">🎯</div>
-              <p>No hay puntos finales guardados.</p>
-              <small>Cuando la trilateración estime tu objetivo, podrás guardarlo aquí.</small>
-            </div>
           </div>
 
           <div class="tab-footer-actions">
@@ -328,11 +323,6 @@
 
         <!-- TAB 3: SETTINGS & EXPORT / IMPORT -->
         <div id="tab-settings" class="tab-content">
-          <div class="tab-header">
-            <h3>Configuración y Datos</h3>
-            <p class="tab-subtitle">Ajustes matemáticos, respaldo y almacenamiento.</p>
-          </div>
-
           <!-- Solver Settings -->
           <div class="card settings-card">
             <h4 class="card-title">📐 Configuración de Trilateración</h4>
@@ -349,11 +339,11 @@
             </div>
             <div class="form-check">
               <input type="checkbox" id="check-show-intersections" checked>
-              <label for="check-show-intersections">Mostrar puntos de intersección entre pares de círculos</label>
+              <label for="check-show-intersections">Mostrar puntos de intersección entre pares</label>
             </div>
             <div class="form-check">
               <input type="checkbox" id="check-show-circle-fill" checked>
-              <label for="check-show-circle-fill">Relleno translúcido en círculos de distancia</label>
+              <label for="check-show-circle-fill">Relleno translúcido en círculos</label>
             </div>
           </div>
 
@@ -362,7 +352,7 @@
             <h4 class="card-title">💾 Respaldo y Copia de Seguridad</h4>
             <div class="btn-group-vertical">
               <button id="btn-export-json" class="btn btn-secondary">
-                📤 Exportar Copia de Seguridad Completa (JSON)
+                📤 Exportar Copia de Seguridad (JSON)
               </button>
               <button id="btn-import-json-trigger" class="btn btn-secondary">
                 📥 Importar Datos (JSON)
@@ -378,7 +368,7 @@
           <div class="card settings-card info-card">
             <h4>ℹ️ Acerca de GeoTrilateración</h4>
             <p>Herramienta diseñada para localización de fuentes de señal, búsquedas geográficas y triangulación de puntos ciegos mediante circunferencias geodésicas y mínimos cuadrados no lineales.</p>
-            <div class="version-tag">Versión 1.1.0 • Multimedia & Offline Ready</div>
+            <div class="version-tag">Versión 2.0 • Ultra Rápido & Offline Ready</div>
           </div>
         </div>
       </aside>
@@ -488,66 +478,6 @@
       </div>
     </div>
 
-    <!-- Modal: Quick Add Origin Dialog (Floating Pop-up on Map Click) -->
-    <div id="modal-quick-origin" class="modal-backdrop hidden">
-      <div class="modal-dialog modal-sm glassmorphism">
-        <div class="modal-header">
-          <div class="modal-title-wrap">
-            <span class="modal-badge-target" style="background: var(--accent-primary);">📍</span>
-            <h3 id="modal-origin-title">Nuevo Punto de Origen</h3>
-          </div>
-          <button class="btn-close-modal" id="btn-close-origin-modal">✕</button>
-        </div>
-        <div class="modal-body">
-          <form id="form-quick-origin">
-            <div class="form-group">
-              <label>Etiqueta / Nombre:</label>
-              <input type="text" id="modal-origin-label" class="form-control" placeholder="Ej: Origen 1">
-            </div>
-
-            <div class="form-row">
-              <div class="form-group col-7">
-                <label>Distancia al Objetivo:*</label>
-                <input type="number" id="modal-origin-distance" class="form-control font-mono" placeholder="Ej: 1500" step="any" min="0.1" required>
-              </div>
-              <div class="form-group col-5">
-                <label>Unidad:</label>
-                <select id="modal-origin-unit" class="form-control">
-                  <option value="m">Metros (m)</option>
-                  <option value="km" selected>Kilómetros (km)</option>
-                  <option value="mi">Millas (mi)</option>
-                  <option value="ft">Pies (ft)</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label>Coordenadas del Punto:</label>
-              <div class="form-row">
-                <div class="col-6">
-                  <input type="text" id="modal-origin-lat" class="form-control font-mono" readonly placeholder="Latitud">
-                </div>
-                <div class="col-6">
-                  <input type="text" id="modal-origin-lng" class="form-control font-mono" readonly placeholder="Longitud">
-                </div>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label>Notas opcionales:</label>
-              <input type="text" id="modal-origin-notes" class="form-control" placeholder="Ej: Esquina norte, torre de señal...">
-            </div>
-          </form>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" id="btn-cancel-modal-origin">Cancelar</button>
-          <button type="button" class="btn btn-primary" id="btn-confirm-modal-origin">
-            💾 Guardar y Calcular
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- Modal: Save / Edit Target Dialog -->
     <div id="modal-save-target" class="modal-backdrop hidden">
       <div class="modal-dialog modal-md glassmorphism">
@@ -636,7 +566,6 @@
                 <input type="file" id="target-media-input" accept="image/*,video/*" multiple style="display: none;">
               </div>
               <div id="target-media-preview-container" class="media-preview-grid">
-                <!-- Dynamically filled with thumbnails / video preview items -->
                 <div class="empty-media-hint" id="empty-media-hint">
                   Sin archivos adjuntos. Usa <strong>"Adjuntar"</strong>, presiona <strong>Ctrl + V</strong> o arrastra archivos aquí.
                 </div>

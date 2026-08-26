@@ -18,14 +18,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 2. Instantiate Map Controller
   const mapController = new MapController('map', {
     onOriginPlaced: (latlng) => {
-      // User clicked on map to set a new origin point: open the quick origin floating dialog!
-      ui.openAddOriginModal(latlng);
+      ui.handleMapClick(latlng);
     },
 
     onOriginMoved: (id, newLat, newLng) => {
       markersManager.updateOrigin(id, { lat: newLat, lng: newLng });
       ui.refreshCalculations();
       ui.showToast('Origen reubicado y cálculo actualizado.', 'info');
+    },
+
+    onOriginUpdated: (id, updates) => {
+      markersManager.updateOrigin(id, updates);
+      ui.refreshCalculations();
+      ui.showToast('Distancia de origen actualizada.', 'success');
+    },
+
+    onOriginDeleted: (id) => {
+      markersManager.removeOrigin(id);
+      ui.refreshCalculations();
+      ui.showToast('Origen eliminado.', 'info');
+    },
+
+    onOriginToggled: (id) => {
+      const state = markersManager.toggleOrigin(id);
+      ui.refreshCalculations();
+      ui.showToast(state ? 'Origen activado' : 'Origen desactivado', 'info');
     },
 
     onBoxSelected: (bounds) => {
@@ -44,7 +61,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         lat: candidatePoint.lat,
         lng: candidatePoint.lng,
         accuracyMeters: candidatePoint.gap || 0,
-        notes: `Punto encontrado con 2 orígenes (Candidato ${idx !== undefined ? idx + 1 : ''})`
+        notes: `Punto candidato ${idx !== undefined ? idx + 1 : ''} (2 orígenes)`
       });
     },
 
@@ -68,7 +85,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   mapController.renderSavedTargets(
     markersManager.getFilteredTargets(),
     (id) => ui.openEditTargetModal(id),
-    (id, name) => ui.handleDeleteTarget(id, name)
+    (id, name) => ui.handleDeleteTarget(id, name),
+    (id) => ui.handleReviewTarget(id)
   );
 
   // If there are existing origins or targets, fit view to them
