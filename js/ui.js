@@ -34,6 +34,7 @@ class UIController {
     this.renderSavedTargetsList();
     this.updateStoredPacksList();
     this.updateOfflineEstimate();
+    this.initLocationTracking();
   }
 
   initDOMReferences() {
@@ -64,6 +65,13 @@ class UIController {
     this.checkVisCircles = document.getElementById('check-vis-circles');
     this.checkVisOrigins = document.getElementById('check-vis-origins');
     this.checkVisTargets = document.getElementById('check-vis-targets');
+    this.checkVisUserLocation = document.getElementById('check-vis-user-location');
+
+    // Floating On-Screen Persistent Location Chip
+    this.floatingUserLocationChip = document.getElementById('floating-user-location-chip');
+    this.userLocationChipText = document.getElementById('user-location-chip-text');
+    this.userLocationPulseDot = document.getElementById('user-location-pulse-dot');
+    this.btnRecenterUserLocation = document.getElementById('btn-recenter-user-location');
     this.btnMinimizeHUD = document.getElementById('btn-minimize-hud');
     this.telemetryBody = document.getElementById('telemetry-body');
     this.solverMessage = document.getElementById('solver-message');
@@ -250,45 +258,31 @@ class UIController {
     if (this.checkVisCircles) this.checkVisCircles.checked = s.showCircles !== false;
     if (this.checkVisOrigins) this.checkVisOrigins.checked = s.showOrigins !== false;
     if (this.checkVisTargets) this.checkVisTargets.checked = s.showSavedTargets !== false;
+    if (this.checkVisUserLocation) this.checkVisUserLocation.checked = s.showUserLocation !== false;
   }
 
   attachEventListeners() {
     // Top Bar - GPS Geolocation
     if (this.btnGPS) {
       this.btnGPS.addEventListener('click', () => {
-        if (window.AndroidBridge && typeof window.AndroidBridge.requestGpsLocation === 'function') {
-          this.showToast('Obteniendo coordenadas GPS nativas...', 'info');
-          if (window.AndroidBridge.vibrate) window.AndroidBridge.vibrate(25);
-          window.AndroidBridge.requestGpsLocation();
-          return;
-        }
-
-        if (!navigator.geolocation) {
-          this.showToast('Geolocalización no disponible en este dispositivo.', 'error');
-          return;
-        }
-        this.showToast('Obteniendo coordenadas GPS...', 'info');
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const { latitude, longitude, accuracy } = pos.coords;
-            this.mapController.setView(latitude, longitude, 15);
-            this.showToast(`Ubicación GPS: [${latitude.toFixed(4)}, ${longitude.toFixed(4)}] ${accuracy ? `(±${accuracy.toFixed(0)}m)` : ''}`, 'success');
-          },
-          (err) => {
-            this.showToast(`Error GPS: ${err.message}`, 'error');
-          },
-          { enableHighAccuracy: true, timeout: 10000 }
-        );
+        this.recenterOnUserLocation(true);
       });
+    }
 
-      // Global handler for Android native GPS updates
-      window.onAndroidLocationReceived = (lat, lng, accuracy, altitude, speed) => {
-        this.mapController.setView(lat, lng, 16);
-        this.showToast(`📍 GPS Nativo: [${lat.toFixed(5)}, ${lng.toFixed(5)}] ±${accuracy ? accuracy.toFixed(0) : 0}m`, 'success');
-        if (window.AndroidBridge && window.AndroidBridge.vibrateSuccess) {
-          window.AndroidBridge.vibrateSuccess();
+    // Floating On-Screen Persistent Location Chip
+    if (this.floatingUserLocationChip) {
+      this.floatingUserLocationChip.addEventListener('click', (e) => {
+        if (e.target !== this.btnRecenterUserLocation) {
+          this.recenterOnUserLocation(false);
         }
-      };
+      });
+    }
+
+    if (this.btnRecenterUserLocation) {
+      this.btnRecenterUserLocation.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.recenterOnUserLocation(true);
+      });
     }
 
     // Top Bar - Markers Dropdown (Color Filter)
@@ -491,6 +485,17 @@ class UIController {
         this.markersManager.settings.showSavedTargets = show;
         this.markersManager.saveToStorage();
         this.mapController.setLayerVisibility('savedTargets', show);
+      });
+    }
+    if (this.checkVisUserLocation) {
+      this.checkVisUserLocation.addEventListener('change', (e) => {
+        const show = e.target.checked;
+        this.markersManager.settings.showUserLocation = show;
+        this.markersManager.saveToStorage();
+        this.mapController.setLayerVisibility('userLocation', show);
+        if (this.floatingUserLocationChip) {
+          this.floatingUserLocationChip.style.display = show ? 'flex' : 'none';
+        }
       });
     }
 
@@ -730,8 +735,10 @@ class UIController {
         reader.onload = (evt) => {
           try {
             const parsed = JSON.parse(evt.target.result);
-            if (this.markersManager.importAllData(parsed)) {
+            const res = this.markersManager.importAllData(parsed, { merge: true });
+            if (res && res.success) {
               this.refreshCalculations();
+              this.renderOriginsList();
               this.renderSavedTargetsList();
               this.mapController.renderSavedTargets(
                 this.markersManager.getFilteredTargets(),
@@ -739,12 +746,21 @@ class UIController {
                 (id, name) => this.handleDeleteTarget(id, name),
                 (id) => this.handleReviewTarget(id)
               );
-              this.showToast('Datos importados exitosamente.', 'success');
+
+              const parts = [];
+              if (res.targetsAdded > 0) parts.push(`+${res.targetsAdded} puntos nuevos`);
+              if (res.targetsUpdated > 0) parts.push(`${res.targetsUpdated} actualizados`);
+              if (res.originsAdded > 0) parts.push(`+${res.originsAdded} orígenes`);
+
+              const detail = parts.length > 0 ? ` (${parts.join(', ')})` : '';
+              this.showToast(`✓ Puntos unificados exitosamente${detail}. Total en este dispositivo: ${res.totalTargets} puntos guardados.`, 'success');
             } else {
-              this.showToast('Estructura de archivo JSON inválida.', 'error');
+              this.showToast('Estructura de archivo inválida. Se admite JSON o GeoJSON.', 'error');
             }
           } catch (err) {
-            this.showToast('Error al leer el archivo JSON.', 'error');
+            this.showToast('Error al leer el archivo. Asegúrate de que sea un JSON o GeoJSON válido.', 'error');
+          } finally {
+            this.inputImportFile.value = '';
           }
         };
         reader.readAsText(file);
@@ -978,6 +994,143 @@ class UIController {
           }
         }
       }, { passive: true });
+    }
+  }
+
+  /* --------------------------------------------------------------------------
+     Real-Time User Location Tracking & Centering
+     -------------------------------------------------------------------------- */
+
+  initLocationTracking() {
+    this.hasCenteredInitialLocation = false;
+    this.watchPositionId = null;
+
+    // Connect mapController callbacks for user location popup actions
+    this.mapController.onLocationAsOrigin = (loc) => {
+      this.handleMapClick({ lat: loc.lat, lng: loc.lng });
+    };
+    this.mapController.onSaveLocationAsTarget = (loc) => {
+      this.openCreateTargetModal({
+        lat: loc.lat,
+        lng: loc.lng,
+        accuracyMeters: loc.accuracy || 0,
+        notes: 'Ubicación GPS registrada'
+      });
+    };
+
+    // Handler for new location updates
+    this.handleLocationUpdate = (lat, lng, accuracy, options = {}) => {
+      if (lat === undefined || lat === null || lng === undefined || lng === null) return;
+      const numLat = parseFloat(lat);
+      const numLng = parseFloat(lng);
+      if (isNaN(numLat) || isNaN(numLng)) return;
+      const acc = accuracy ? parseFloat(accuracy) : 0;
+
+      const isFirst = !this.hasCenteredInitialLocation && (!this.markersManager.origins || this.markersManager.origins.length === 0);
+
+      // Update map marker (with pin and "UBICACIÓN ACTUAL" badge)
+      this.mapController.updateUserLocation(numLat, numLng, acc, {
+        center: isFirst || options.center,
+        zoom: options.zoom || 16
+      });
+
+      if (isFirst || options.center) {
+        this.hasCenteredInitialLocation = true;
+      }
+
+      // Update floating on-screen chip
+      if (this.userLocationChipText) {
+        const accStr = acc > 0 ? ` (±${acc.toFixed(0)}m)` : '';
+        this.userLocationChipText.innerHTML = `📍 <strong>Ubicación Actual:</strong> ${numLat.toFixed(5)}, ${numLng.toFixed(5)}${accStr}`;
+      }
+      if (this.userLocationPulseDot) {
+        this.userLocationPulseDot.className = 'pulse-dot gps-pulse';
+      }
+      if (this.floatingUserLocationChip) {
+        this.floatingUserLocationChip.classList.remove('searching', 'error');
+        this.floatingUserLocationChip.classList.add('active');
+      }
+    };
+
+    // Global Android Bridge native GPS handler
+    window.onAndroidLocationReceived = (lat, lng, accuracy, altitude, speed) => {
+      this.handleLocationUpdate(lat, lng, accuracy);
+      if (window.AndroidBridge && window.AndroidBridge.vibrateSuccess) {
+        if (!this.hasCenteredInitialLocation) {
+          window.AndroidBridge.vibrateSuccess();
+        }
+      }
+    };
+
+    // Web Geolocation API continuous watchPosition
+    if (navigator.geolocation) {
+      if (this.userLocationChipText) {
+        this.userLocationChipText.textContent = '📍 Ubicación Actual: Buscando GPS...';
+      }
+
+      const geoOptions = {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 5000
+      };
+
+      this.watchPositionId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const { latitude, longitude, accuracy } = pos.coords;
+          this.handleLocationUpdate(latitude, longitude, accuracy);
+        },
+        (err) => {
+          console.warn('Geolocation watch error:', err);
+          if (this.userLocationChipText && !this.mapController.getUserLocation()) {
+            this.userLocationChipText.textContent = '📍 Ubicación Actual: Toca para activar GPS';
+            if (this.userLocationPulseDot) {
+              this.userLocationPulseDot.className = 'pulse-dot';
+            }
+          }
+        },
+        geoOptions
+      );
+    } else {
+      if (this.userLocationChipText) {
+        this.userLocationChipText.textContent = '📍 GPS no compatible';
+      }
+    }
+
+    // Trigger initial Android native request if available
+    if (window.AndroidBridge && typeof window.AndroidBridge.requestGpsLocation === 'function') {
+      window.AndroidBridge.requestGpsLocation();
+    }
+  }
+
+  recenterOnUserLocation(forceRequest = false) {
+    const loc = this.mapController.getUserLocation();
+    if (loc) {
+      this.mapController.centerOnUserLocation(16);
+      this.showToast(`📍 Centrado en tu ubicación actual: [${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}]`, 'success');
+      if (window.AndroidBridge && window.AndroidBridge.vibrate) window.AndroidBridge.vibrate(20);
+    } else {
+      this.showToast('Obteniendo coordenadas GPS...', 'info');
+    }
+
+    if (forceRequest || !loc) {
+      if (window.AndroidBridge && typeof window.AndroidBridge.requestGpsLocation === 'function') {
+        window.AndroidBridge.requestGpsLocation();
+        return;
+      }
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude, accuracy } = pos.coords;
+            this.handleLocationUpdate(latitude, longitude, accuracy, { center: true, zoom: 16 });
+            this.showToast(`📍 Ubicación GPS: [${latitude.toFixed(4)}, ${longitude.toFixed(4)}] (±${accuracy.toFixed(0)}m)`, 'success');
+          },
+          (err) => {
+            this.showToast(`Error GPS: ${err.message}`, 'error');
+          },
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      }
     }
   }
 

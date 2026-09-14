@@ -24,6 +24,7 @@ class MarkersManager {
       showCircles: true,
       showOrigins: true,
       showSavedTargets: true,
+      showUserLocation: true,
       theme: 'dark'
     };
 
@@ -452,19 +453,210 @@ class MarkersManager {
     };
   }
 
-  importAllData(data) {
-    if (!data || typeof data !== 'object') return false;
-    if (data.origins && Array.isArray(data.origins)) {
-      this.origins = data.origins;
+  /**
+   * Import data and automatically UNIFY (merge) with existing points
+   * Ensures that points already present on this device are NOT deleted or overwritten.
+   */
+  importAllData(data, options = { merge: true }) {
+    if (!data || typeof data !== 'object') return { success: false, error: 'invalid_data' };
+
+    let incomingOrigins = [];
+    let incomingTargets = [];
+    let incomingSettings = null;
+
+    // Detect GeoJSON format (FeatureCollection)
+    if (data.type === 'FeatureCollection' && Array.isArray(data.features)) {
+      data.features.forEach((feat, idx) => {
+        if (!feat || !feat.geometry || !feat.geometry.coordinates) return;
+        const [lng, lat] = feat.geometry.coordinates;
+        const props = feat.properties || {};
+
+        if (props.featureType === 'origin' || props.distanceMeters !== undefined) {
+          incomingOrigins.push({
+            id: props.id || `origin_imp_${Date.now()}_${idx}`,
+            label: props.label || `Origen ${this.origins.length + incomingOrigins.length + 1}`,
+            lat: parseFloat(lat),
+            lng: parseFloat(lng),
+            distance: parseFloat(props.distanceMeters || props.distance || 1000),
+            unit: props.unit || 'km',
+            color: props.color || this.getNextColor(),
+            enabled: props.enabled !== false,
+            notes: props.notes || ''
+          });
+        } else {
+          // Treat as saved target
+          incomingTargets.push({
+            id: props.id || `target_imp_${Date.now()}_${idx}`,
+            name: props.name || props.label || `Punto Importado ${idx + 1}`,
+            lat: parseFloat(lat),
+            lng: parseFloat(lng),
+            description: props.description || props.notes || '',
+            category: props.category || 'Puntos Importados',
+            color: props.color || '#0284c7',
+            accuracy: props.accuracy || 0,
+            mediaList: props.mediaList || [],
+            createdAt: props.createdAt || new Date().toISOString(),
+            visible: props.visible !== false
+          });
+        }
+      });
+    } else if (Array.isArray(data)) {
+      // Direct array of items
+      data.forEach((item, idx) => {
+        if (!item || item.lat === undefined || item.lng === undefined) return;
+        if (item.distance !== undefined) {
+          incomingOrigins.push(item);
+        } else {
+          incomingTargets.push(item);
+        }
+      });
+    } else {
+      // Standard VeeMaps backup structure
+      if (Array.isArray(data.origins)) {
+        incomingOrigins = data.origins;
+      }
+      if (Array.isArray(data.savedTargets)) {
+        incomingTargets = data.savedTargets;
+      }
+      if (data.settings && typeof data.settings === 'object') {
+        incomingSettings = data.settings;
+      }
     }
-    if (data.savedTargets && Array.isArray(data.savedTargets)) {
-      this.savedTargets = data.savedTargets;
+
+    let originsAdded = 0;
+    let originsUpdated = 0;
+    let targetsAdded = 0;
+    let targetsUpdated = 0;
+
+    const shouldMerge = options.merge !== false;
+
+    if (shouldMerge) {
+      // --- UNIFY SAVED TARGETS ---
+      incomingTargets.forEach(incT => {
+        if (!incT || isNaN(incT.lat) || isNaN(incT.lng)) return;
+        const lat = parseFloat(incT.lat);
+        const lng = parseFloat(incT.lng);
+
+        // 1. Check by exact ID match
+        const existingByIdIdx = this.savedTargets.findIndex(t => t.id === incT.id);
+        if (existingByIdIdx !== -1) {
+          this.savedTargets[existingByIdIdx] = {
+            ...this.savedTargets[existingByIdIdx],
+            ...incT,
+            lat,
+            lng,
+            // Preserve existing media list if incoming has none
+            mediaList: (incT.mediaList && incT.mediaList.length > 0)
+              ? incT.mediaList
+              : (this.savedTargets[existingByIdIdx].mediaList || [])
+          };
+          targetsUpdated++;
+        } else {
+          // 2. Check by coordinates & name (fuzzy deduplication)
+          const existingByCoordsIdx = this.savedTargets.findIndex(t =>
+            Math.abs(t.lat - lat) < 1e-6 &&
+            Math.abs(t.lng - lng) < 1e-6 &&
+            (t.name || '').trim().toLowerCase() === (incT.name || '').trim().toLowerCase()
+          );
+
+          if (existingByCoordsIdx !== -1) {
+            this.savedTargets[existingByCoordsIdx] = {
+              ...this.savedTargets[existingByCoordsIdx],
+              ...incT,
+              lat,
+              lng
+            };
+            targetsUpdated++;
+          } else {
+            // 3. Completely new point: add it while guaranteeing unique ID
+            const newId = incT.id && !this.savedTargets.some(t => t.id === incT.id)
+              ? incT.id
+              : `target_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+            this.savedTargets.push({
+              ...incT,
+              id: newId,
+              lat,
+              lng,
+              createdAt: incT.createdAt || new Date().toISOString()
+            });
+            targetsAdded++;
+          }
+        }
+      });
+
+      // --- UNIFY ORIGINS ---
+      incomingOrigins.forEach(incO => {
+        if (!incO || isNaN(incO.lat) || isNaN(incO.lng)) return;
+        const lat = parseFloat(incO.lat);
+        const lng = parseFloat(incO.lng);
+
+        const existingByIdIdx = this.origins.findIndex(o => o.id === incO.id);
+        if (existingByIdIdx !== -1) {
+          this.origins[existingByIdIdx] = {
+            ...this.origins[existingByIdIdx],
+            ...incO,
+            lat,
+            lng
+          };
+          originsUpdated++;
+        } else {
+          const existingByCoordsIdx = this.origins.findIndex(o =>
+            Math.abs(o.lat - lat) < 1e-6 &&
+            Math.abs(o.lng - lng) < 1e-6 &&
+            (o.label || '').trim().toLowerCase() === (incO.label || '').trim().toLowerCase()
+          );
+
+          if (existingByCoordsIdx !== -1) {
+            this.origins[existingByCoordsIdx] = {
+              ...this.origins[existingByCoordsIdx],
+              ...incO,
+              lat,
+              lng
+            };
+            originsUpdated++;
+          } else {
+            const newId = incO.id && !this.origins.some(o => o.id === incO.id)
+              ? incO.id
+              : `origin_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+
+            this.origins.push({
+              ...incO,
+              id: newId,
+              lat,
+              lng
+            });
+            originsAdded++;
+          }
+        }
+      });
+
+      // Non-destructively merge settings
+      if (incomingSettings) {
+        this.settings = { ...this.settings, ...incomingSettings };
+      }
+    } else {
+      // Direct replace mode
+      this.origins = incomingOrigins;
+      this.savedTargets = incomingTargets;
+      if (incomingSettings) {
+        this.settings = { ...this.settings, ...incomingSettings };
+      }
+      targetsAdded = incomingTargets.length;
+      originsAdded = incomingOrigins.length;
     }
-    if (data.settings && typeof data.settings === 'object') {
-      this.settings = { ...this.settings, ...data.settings };
-    }
+
     this.saveToStorage();
-    return true;
+
+    return {
+      success: true,
+      targetsAdded,
+      targetsUpdated,
+      originsAdded,
+      originsUpdated,
+      totalTargets: this.savedTargets.length,
+      totalOrigins: this.origins.length
+    };
   }
 
   resetAllData() {

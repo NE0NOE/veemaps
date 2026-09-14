@@ -19,6 +19,11 @@ class MapController {
     this.comparisonLayer = L.layerGroup();
     this.tempLayer = L.layerGroup();
     this.selectionLayer = L.layerGroup();
+    this.userLocationLayer = L.layerGroup();
+
+    this.userLocationMarker = null;
+    this.userLocationAccuracyCircle = null;
+    this.currentUserLocation = null;
 
     this.isAddingOriginMode = false;
     this.isDrawingBoxMode = false;
@@ -39,6 +44,8 @@ class MapController {
     this.onTargetAsOrigin = options.onTargetAsOrigin || null;
     this.onDismissEstimatedTarget = options.onDismissEstimatedTarget || null;
     this.onReviewTarget = options.onReviewTarget || null;
+    this.onLocationAsOrigin = options.onLocationAsOrigin || null;
+    this.onSaveLocationAsTarget = options.onSaveLocationAsTarget || null;
   }
 
   /**
@@ -104,6 +111,7 @@ class MapController {
     this.targetLayer.addTo(this.map);
     this.tempLayer.addTo(this.map);
     this.selectionLayer.addTo(this.map);
+    this.userLocationLayer.addTo(this.map);
 
     // Setup map events
     this.setupEvents();
@@ -217,7 +225,8 @@ class MapController {
       origins: this.originsLayer,
       savedTargets: this.savedTargetsLayer,
       intersections: this.intersectionsLayer,
-      target: this.targetLayer
+      target: this.targetLayer,
+      userLocation: this.userLocationLayer
     };
 
     const targetLayer = layerMap[layerKey];
@@ -797,6 +806,147 @@ class MapController {
 
     if (latLngs.length === 0) return null;
     return L.latLngBounds(latLngs);
+  }
+
+  /**
+   * Update or create User Location Marker with radar pulse, halo and badge
+   */
+  updateUserLocation(lat, lng, accuracy = 0, options = {}) {
+    if (lat === undefined || lat === null || lng === undefined || lng === null) return;
+
+    this.currentUserLocation = {
+      lat: parseFloat(lat),
+      lng: parseFloat(lng),
+      accuracy: accuracy ? parseFloat(accuracy) : 0,
+      timestamp: Date.now()
+    };
+
+    const pos = [this.currentUserLocation.lat, this.currentUserLocation.lng];
+    const accMeters = this.currentUserLocation.accuracy;
+
+    if (!this.userLocationMarker) {
+      const icon = L.divIcon({
+        className: 'custom-user-location-marker',
+        html: `
+          <div class="user-location-marker-wrapper">
+            <div class="user-location-radar-ring"></div>
+            <div class="user-location-pin" title="Tu Ubicación Actual">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                <circle cx="12" cy="12" r="7"></circle>
+              </svg>
+            </div>
+            <div class="user-location-badge">📍 UBICACIÓN ACTUAL</div>
+          </div>
+        `,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22]
+      });
+
+      this.userLocationMarker = L.marker(pos, {
+        icon,
+        zIndexOffset: 950
+      });
+
+      this.updateUserLocationPopup();
+
+      this.userLocationAccuracyCircle = L.circle(pos, {
+        radius: Math.max(accMeters, 5),
+        color: '#0284c7',
+        weight: 1.5,
+        opacity: 0.6,
+        fillColor: '#38bdf8',
+        fillOpacity: 0.12,
+        dashArray: '4, 4'
+      });
+
+      this.userLocationLayer.addLayer(this.userLocationAccuracyCircle);
+      this.userLocationLayer.addLayer(this.userLocationMarker);
+    } else {
+      this.userLocationMarker.setLatLng(pos);
+      if (this.userLocationAccuracyCircle) {
+        this.userLocationAccuracyCircle.setLatLng(pos);
+        this.userLocationAccuracyCircle.setRadius(Math.max(accMeters, 5));
+      }
+      this.updateUserLocationPopup();
+    }
+
+    if (options.center) {
+      this.centerOnUserLocation(options.zoom || 16);
+    }
+  }
+
+  updateUserLocationPopup() {
+    if (!this.userLocationMarker || !this.currentUserLocation) return;
+    const { lat, lng, accuracy } = this.currentUserLocation;
+    const accText = accuracy > 0 ? `±${accuracy.toFixed(0)}m` : 'Alta';
+
+    const popupHtml = `
+      <div class="user-location-popup-card">
+        <div class="user-popup-header">
+          <span class="user-popup-icon">📍</span>
+          <strong class="user-popup-title">Tu Ubicación Actual</strong>
+        </div>
+        <div class="user-popup-coords font-mono">${lat.toFixed(6)}, ${lng.toFixed(6)}</div>
+        <div class="user-accuracy-badge">
+          <span class="pulse-dot-sm"></span> Precisión GPS: ${accText}
+        </div>
+        <div class="user-popup-actions">
+          <button id="btn-popup-loc-as-origin" class="btn btn-xs btn-primary" title="Usar esta ubicación como origen">
+            ➕ Como Origen
+          </button>
+          <button id="btn-popup-loc-save-target" class="btn btn-xs btn-outline" title="Guardar punto en la base de datos">
+            💾 Guardar Punto
+          </button>
+          <button id="btn-popup-loc-copy" class="btn btn-xs btn-ghost" title="Copiar Coordenadas">
+            📋 Copiar
+          </button>
+        </div>
+      </div>
+    `;
+
+    this.userLocationMarker.unbindPopup();
+    this.userLocationMarker.bindPopup(popupHtml, { className: 'custom-leaflet-popup' });
+
+    this.userLocationMarker.off('popupopen');
+    this.userLocationMarker.on('popupopen', () => {
+      const btnAsOrigin = document.getElementById('btn-popup-loc-as-origin');
+      if (btnAsOrigin && this.onLocationAsOrigin) {
+        btnAsOrigin.onclick = () => {
+          this.userLocationMarker.closePopup();
+          this.onLocationAsOrigin(this.currentUserLocation);
+        };
+      }
+
+      const btnSave = document.getElementById('btn-popup-loc-save-target');
+      if (btnSave && this.onSaveLocationAsTarget) {
+        btnSave.onclick = () => {
+          this.userLocationMarker.closePopup();
+          this.onSaveLocationAsTarget(this.currentUserLocation);
+        };
+      }
+
+      const btnCopy = document.getElementById('btn-popup-loc-copy');
+      if (btnCopy) {
+        btnCopy.onclick = () => {
+          const text = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text);
+          }
+          btnCopy.innerText = '✓ Copiado';
+          setTimeout(() => { btnCopy.innerText = '📋 Copiar'; }, 2000);
+        };
+      }
+    });
+  }
+
+  getUserLocation() {
+    return this.currentUserLocation;
+  }
+
+  centerOnUserLocation(zoom = 16) {
+    if (!this.currentUserLocation) return false;
+    this.map.flyTo([this.currentUserLocation.lat, this.currentUserLocation.lng], zoom, { duration: 1.0 });
+    return true;
   }
 }
 

@@ -95,6 +95,13 @@
       <!-- Map Container -->
       <div id="map" class="map-view"></div>
 
+      <!-- Floating Persistent User Location Chip -->
+      <div id="floating-user-location-chip" class="floating-user-location-chip" title="Tu ubicación actual en vivo - Clic para centrar">
+        <span class="pulse-dot gps-pulse" id="user-location-pulse-dot"></span>
+        <span id="user-location-chip-text" class="location-chip-text">📍 Ubicación Actual: Obteniendo GPS...</span>
+        <button type="button" id="btn-recenter-user-location" class="btn-chip-action" title="Centrar mapa en mi ubicación">Centrar</button>
+      </div>
+
       <!-- Floating Map Controls & Dynamic Island HUD -->
       <div class="map-hud-overlay">
         <div id="unified-hud-card" class="unified-hud glassmorphism">
@@ -131,6 +138,10 @@
                   <button class="dropdown-item layer-choice" data-layer-key="carto">🏙️ CartoDB Claro</button>
                   <hr>
                   <div class="dropdown-section-title">Capas Visibles</div>
+                  <label class="layer-toggle-row">
+                    <input type="checkbox" id="check-vis-user-location" checked>
+                    <span>📍 Mi Ubicación Actual</span>
+                  </label>
                   <label class="layer-toggle-row">
                     <input type="checkbox" id="check-vis-circles" checked>
                     <span>⭕ Círculos de Distancia</span>
@@ -368,14 +379,17 @@
 
           <!-- Backup and Data Management -->
           <div class="card settings-card">
-            <h4 class="card-title">💾 Respaldo y Copia de Seguridad</h4>
+            <h4 class="card-title">💾 Respaldo y Transferencia de Puntos</h4>
             <div class="btn-group-vertical">
-              <button id="btn-export-json" class="btn btn-secondary">
+              <button id="btn-export-json" class="btn btn-secondary" title="Exportar archivo de puntos para transferir a otro dispositivo">
                 📤 Exportar Copia de Seguridad (JSON)
               </button>
-              <button id="btn-import-json-trigger" class="btn btn-secondary">
-                📥 Importar Datos (JSON)
+              <button id="btn-import-json-trigger" class="btn btn-secondary" title="Importar puntos desde otro dispositivo y unificarlos con los actuales">
+                📥 Importar y Unificar Puntos (JSON / GeoJSON)
               </button>
+              <div class="backup-note-pill" style="font-size: 11px; color: var(--text-secondary); background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: var(--radius-sm); padding: 6px 10px; margin: 4px 0 6px 0; line-height: 1.35;">
+                🔗 <strong>Unificación automática:</strong> Al importar un archivo en este dispositivo, los puntos se combinan de forma inteligente con los que ya tienes guardados. <em>¡Nunca se borran tus puntos actuales!</em>
+              </div>
               <input type="file" id="input-import-file" accept=".json,.geojson" style="display: none;">
               <button id="btn-reset-all-data" class="btn btn-outline-danger">
                 🗑️ Borrar Todos los Datos Locales
