@@ -27,10 +27,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import android.os.Build
+import android.provider.Settings
 import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.WebViewAssetLoader
 
 class MainActivity : AppCompatActivity(), LocationListener {
+
+    companion object {
+        var activeInstance: MainActivity? = null
+    }
 
     private lateinit var webView: WebView
     private lateinit var assetLoader: WebViewAssetLoader
@@ -73,6 +79,7 @@ class MainActivity : AppCompatActivity(), LocationListener {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        activeInstance = this
 
         // Initialize Asset Loader for 100% offline asset serving
         assetLoader = WebViewAssetLoader.Builder()
@@ -323,8 +330,48 @@ class MainActivity : AppCompatActivity(), LocationListener {
     override fun onProviderEnabled(provider: String) {}
     override fun onProviderDisabled(provider: String) {}
 
+    override fun onResume() {
+        super.onResume()
+        activeInstance = this
+        syncPendingOverlayEvents()
+    }
+
+    fun syncPendingOverlayEvents() {
+        val pending = FloatingOverlayService.getAndClearPendingEvents(this)
+        if (pending != "[]" && pending.isNotBlank()) {
+            executeJavascript("if (window.onOverlayPendingEventsSync) { window.onOverlayPendingEventsSync($pending); }")
+        }
+    }
+
+    fun executeJavascript(script: String) {
+        runOnUiThread {
+            webView.evaluateJavascript(script, null)
+        }
+    }
+
+    fun hasOverlayPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else {
+            true
+        }
+    }
+
+    fun requestOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        if (activeInstance == this) {
+            activeInstance = null
+        }
         locationManager?.removeUpdates(this)
         webView.destroy()
     }

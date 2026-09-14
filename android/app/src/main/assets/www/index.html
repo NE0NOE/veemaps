@@ -81,6 +81,12 @@
           <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
         </button>
 
+        <!-- Floating Overlay Button -->
+        <button id="btn-floating-overlay" class="btn btn-secondary" title="Superposición Flotante sobre otras Apps (Burbuja)">
+          <span style="font-size: 15px;">🪟</span>
+          <span class="btn-text">Superposición</span>
+        </button>
+
         <!-- Toggle Sidebar -->
         <button id="btn-toggle-sidebar" class="btn btn-secondary toggle-sidebar-btn" title="Ocultar / Mostrar Panel Lateral">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
@@ -395,6 +401,17 @@
                 🗑️ Borrar Todos los Datos Locales
               </button>
             </div>
+          </div>
+
+          <!-- Floating Overlay Settings Card -->
+          <div class="card settings-card">
+            <h4 class="card-title">🪟 Superposición Flotante (Sobre otras Apps)</h4>
+            <p style="font-size: 12px; color: var(--text-secondary); margin: 4px 0 10px 0; line-height: 1.4;">
+              Muestra una burbuja flotante arrastrable para registrar o modificar orígenes con su radio geodésico en tiempo real mientras usas otras apps (repartos, Google Maps, mensajería).
+            </p>
+            <button id="btn-start-overlay-service" class="btn btn-primary" style="width: 100%; justify-content: center; gap: 8px;">
+              <span>🚀 Activar Burbuja Flotante</span>
+            </button>
           </div>
 
           <!-- App Info -->
@@ -866,6 +883,7 @@
   <script src="js/markers-manager.js"></script>
   <script src="js/map.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/overlay-manager.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

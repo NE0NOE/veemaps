@@ -160,4 +160,70 @@ class GeoTreMapsBridge(
             }
         }
     }
+
+    @JavascriptInterface
+    fun hasOverlayPermission(): Boolean {
+        return activity.hasOverlayPermission()
+    }
+
+    @JavascriptInterface
+    fun requestOverlayPermission() {
+        activity.runOnUiThread {
+            activity.requestOverlayPermission()
+        }
+    }
+
+    @JavascriptInterface
+    fun startFloatingOverlay(currentOriginsJson: String): Boolean {
+        if (!activity.hasOverlayPermission()) {
+            activity.runOnUiThread {
+                activity.requestOverlayPermission()
+            }
+            return false
+        }
+
+        return try {
+            val intent = Intent(activity, FloatingOverlayService::class.java).apply {
+                action = FloatingOverlayService.ACTION_START
+                putExtra(FloatingOverlayService.EXTRA_CURRENT_ORIGINS, currentOriginsJson)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                activity.startForegroundService(intent)
+            } else {
+                activity.startService(intent)
+            }
+            activity.runOnUiThread {
+                // Minimize app so the user immediately sees the floating bubble on top of whatever app they are using
+                activity.moveTaskToBack(true)
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            showToast("Error al iniciar superposición: ${e.localizedMessage}")
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun stopFloatingOverlay() {
+        try {
+            val intent = Intent(activity, FloatingOverlayService::class.java).apply {
+                action = FloatingOverlayService.ACTION_STOP
+            }
+            activity.startService(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    @JavascriptInterface
+    fun isFloatingOverlayRunning(): Boolean {
+        return FloatingOverlayService.isRunning
+    }
+
+    @JavascriptInterface
+    fun getPendingOverlayEvents(): String {
+        return FloatingOverlayService.getAndClearPendingEvents(activity)
+    }
 }
+
